@@ -1,0 +1,165 @@
+'use server';
+
+import { ai } from '@/ai/genkit';
+import { z } from 'genkit';
+import nodemailer from 'nodemailer';
+import { getBaseUrl } from '@/lib/config';
+
+// Input schema for the account status email flow
+const AccountStatusEmailInputSchema = z.object({
+  userName: z.string().describe("The name of the user."),
+  userEmail: z.string().email().describe("The email address of the user."),
+  status: z.enum(['activated', 'disabled']).describe("The new status of the account."),
+  // SMTP Settings
+  smtpHost: z.string().optional().describe("SMTP host for sending emails."),
+  smtpPort: z.string().optional().describe("SMTP port (e.g., '587', '465')."),
+  smtpUser: z.string().optional().describe("SMTP username."),
+  smtpPass: z.string().optional().describe("SMTP password."),
+  senderEmail: z.string().email().optional().describe("The email address to send from."),
+  siteName: z.string().optional(),
+  logoUrl: z.string().url().optional(),
+});
+
+export type AccountStatusEmailInput = z.infer<typeof AccountStatusEmailInputSchema>;
+
+export async function sendAccountStatusEmail(input: AccountStatusEmailInput): Promise<{ success: boolean; message: string }> {
+  try {
+    return await accountStatusEmailFlow(input);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return { success: false, message: `Failed to process status email flow: ${errorMessage}` };
+  }
+}
+
+const createHtmlTemplate = (title: string, bodyContent: string, siteName: string, logoUrl?: string) => {
+  const finalLogoUrl = logoUrl || `${getBaseUrl()}/default-image.png`;
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { margin: 0; padding: 0; background-color: #F8F9FA; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; }
+        .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; }
+        .inner-container { padding: 25px; }
+        .header { text-align: center; padding: 20px 0; border-bottom: 1px solid #f0f0f0; }
+        .header img { max-width: 140px; height: auto; }
+        .content { padding: 25px 0; color: #333333; line-height: 1.6; }
+        .content h2 { color: #111111; font-size: 22px; margin-bottom: 15px; }
+        .footer { text-align: center; font-size: 12px; color: #999999; padding: 25px; border-top: 1px solid #eeeeee; }
+        
+        .button {
+            display: inline-block; padding: 14px 28px; background-color: #0B5ED7; color: #ffffff !important;
+            text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px; margin-top: 20px;
+        }
+        @media only screen and (max-width: 600px) {
+            .inner-container { padding: 15px !important; }
+            .container { width: 100% !important; }
+        }
+    </style>
+</head>
+<body>
+    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #F8F9FA;">
+        <tr>
+            <td align="center">
+                <table class="container" width="600" border="0" cellspacing="0" cellpadding="0" style="background-color: #ffffff; margin: 20px 0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+                    <tr>
+                        <td class="inner-container">
+                            <div class="header">
+                                <a href="${getBaseUrl()}" target="_blank">
+                                    <img src="${finalLogoUrl}" alt="${siteName} Logo">
+                                </a>
+                            </div>
+                            <div class="content">
+                                <h2>${title}</h2>
+                                ${bodyContent}
+                            </div>
+                            <div class="footer">
+                                <p>&copy; ${new Date().getFullYear()} ${siteName}. All rights reserved.</p>
+                                <p>This is an automated email. Please do not reply directly.</p>
+                            </div>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
+`;
+};
+
+const accountStatusEmailFlow = ai.defineFlow(
+  {
+    name: 'accountStatusEmailFlow',
+    inputSchema: AccountStatusEmailInputSchema,
+    outputSchema: z.object({ success: z.boolean(), message: z.string() }),
+  },
+  async (details) => {
+    const { 
+      smtpHost, smtpPort, smtpUser, smtpPass, senderEmail, 
+      userName, userEmail, status, siteName = "Screenplay Pro", logoUrl 
+    } = details;
+    
+    const canAttemptRealEmail = smtpHost && smtpPort && smtpUser && smtpPass && senderEmail;
+
+    const loginUrl = `${getBaseUrl()}/auth/login`;
+    const emailSubject = status === 'activated'
+      ? `Your account on ${siteName} has been activated!`
+      : `Your account on ${siteName} has been disabled`;
+
+    const emailTitle = status === 'activated'
+      ? "Account Activated"
+      : "Account Suspended / Disabled";
+
+    const emailBodyContent = status === 'activated'
+      ? `
+        <p>Hi ${userName},</p>
+        <p>We are pleased to inform you that your account on <strong>${siteName}</strong> has been successfully activated by our team.</p>
+        <p>You can now log in, search for opportunities, showcase your modeling/acting portfolio, and connect with casting directors.</p>
+        <p><a href="${loginUrl}" class="button">Log In to Your Profile</a></p>
+        <p>Welcome to our community!</p>
+        <p>Thanks,<br>The ${siteName} Team</p>
+      `
+      : `
+        <p>Hi ${userName},</p>
+        <p>This email is to notify you that your account on <strong>${siteName}</strong> has been disabled by the administrator.</p>
+        <p>As a result, you will not be able to log in or access your portfolio profile at this time.</p>
+        <p>If you believe this is an error or would like to request reactivation, please reach out to our support team.</p>
+        <p>Thanks,<br>The ${siteName} Team</p>
+      `;
+
+    const htmlBody = createHtmlTemplate(emailTitle, emailBodyContent, siteName, logoUrl);
+
+    if (!canAttemptRealEmail) {
+      console.warn("SMTP configuration incomplete. Simulating status update email.");
+      return { success: false, message: "SMTP config incomplete. Email simulated." };
+    }
+
+    const portNumber = parseInt(smtpPort!, 10);
+    if (isNaN(portNumber)) {
+      return { success: false, message: "Invalid SMTP port." };
+    }
+
+    const transporter = nodemailer.createTransport({
+      host: smtpHost, 
+      port: portNumber, 
+      secure: portNumber === 465, 
+      auth: { user: smtpUser, pass: smtpPass },
+    });
+    
+    try {
+      await transporter.sendMail({
+        from: `${siteName} <${senderEmail}>`,
+        to: userEmail,
+        subject: emailSubject,
+        html: htmlBody,
+      });
+      return { success: true, message: `Account status (${status}) email sent successfully.` };
+    } catch (error: any) {
+      console.error("Error sending account status email:", error);
+      return { success: false, message: `Email sending failed: ${error.message || 'Unknown nodemailer error'}.` };
+    }
+  }
+);

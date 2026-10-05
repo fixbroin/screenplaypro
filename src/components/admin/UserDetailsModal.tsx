@@ -1,0 +1,389 @@
+
+"use client";
+
+import { useEffect, useState, useCallback } from 'react';
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
+import type { FirestoreUser, Address } from '@/types/firestore';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Separator } from '@/components/ui/separator';
+import { UserCircle, Mail, Phone, CalendarDays, CheckCircle, XCircle, Loader2, Edit3, Save, MapPin, AtSign, CheckCircle2, Copy } from 'lucide-react';
+import { ScrollArea } from '../ui/scroll-area';
+import AppImage from '@/components/ui/AppImage';
+import { getTimestampMillis } from '@/lib/utils';
+import { useAuth } from '@/hooks/useAuth';
+import { debounce } from 'lodash';
+import { Badge } from '@/components/ui/badge';
+
+interface UserDetailsModalProps {
+  user: FirestoreUser;
+  onClose: () => void;
+  onUpdateUser: (updatedData: Partial<FirestoreUser>) => Promise<boolean>;
+}
+
+const userEditSchema = z.object({
+  displayName: z.string().min(2, "Name must be at least 2 characters.").max(50, "Name too long."),
+  username: z.string().min(3, "Username must be at least 3 characters.").max(30, "Username too long.")
+    .regex(/^[a-z0-9_]+$/, "Username can only contain lowercase letters, numbers, and underscores.")
+    .optional().or(z.literal('')),
+  email: z.string().email("Invalid email address."),
+  mobileNumber: z.string()
+    .min(10, "Mobile number must be 10-15 digits.")
+    .max(15, "Mobile number cannot exceed 15 digits.")
+    .regex(/^\+?[1-9]\d{1,14}$/, "Invalid phone format (e.g., +919876543210 or 9876543210).")
+    .optional().or(z.literal('')),
+});
+
+type UserEditFormData = z.infer<typeof userEditSchema>;
+
+export default function UserDetailsModal({ user, onClose, onUpdateUser }: UserDetailsModalProps) {
+  const { checkUsernameAvailability, generateUsernameSuggestions } = useAuth();
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [usernameStatus, setUsernameStatus] = useState<'idle' | 'checking' | 'available' | 'taken' | 'invalid'>('idle');
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+
+  const handleCopy = (text: string, fieldName: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedField(fieldName);
+    setTimeout(() => {
+      setCopiedField(null);
+    }, 2000);
+  };
+
+  const form = useForm<UserEditFormData>({
+    resolver: zodResolver(userEditSchema),
+    defaultValues: {
+      displayName: user.displayName || "",
+      username: user.username || "",
+      email: user.email || "",
+      mobileNumber: user.mobileNumber || "",
+    },
+  });
+
+  const watchedUsername = form.watch("username");
+
+  const debouncedCheck = useCallback(
+    debounce(async (val: string) => {
+      if (val === user.username) {
+        setUsernameStatus('available');
+        return;
+      }
+      if (val.length < 3) {
+        setUsernameStatus('invalid');
+        return;
+      }
+      setUsernameStatus('checking');
+      const isAvailable = await checkUsernameAvailability(val);
+      if (isAvailable) {
+        setUsernameStatus('available');
+        setSuggestions([]);
+      } else {
+        setUsernameStatus('taken');
+        const newSuggestions = await generateUsernameSuggestions(val);
+        setSuggestions(newSuggestions);
+      }
+    }, 500),
+    [checkUsernameAvailability, generateUsernameSuggestions, user.username]
+  );
+
+  useEffect(() => {
+    if (watchedUsername && isEditing) {
+      debouncedCheck(watchedUsername);
+    } else {
+      setUsernameStatus('idle');
+      setSuggestions([]);
+    }
+  }, [watchedUsername, debouncedCheck, isEditing]);
+
+  useEffect(() => {
+    form.reset({
+      displayName: user.displayName || "",
+      username: user.username || "",
+      email: user.email || "",
+      mobileNumber: user.mobileNumber || "",
+    });
+  }, [user, form]);
+
+  const onSubmit = async (data: UserEditFormData) => {
+    if (usernameStatus === 'taken' || usernameStatus === 'invalid') return;
+    setIsSubmitting(true);
+    const success = await onUpdateUser({
+      displayName: data.displayName,
+      username: data.username || undefined,
+      email: data.email,
+      mobileNumber: data.mobileNumber || null,
+    });
+    setIsSubmitting(false);
+    if (success) {
+      setIsEditing(false);
+    }
+  };
+
+  const formatTimestampForIndia = (timestamp?: any): string => {
+    const millis = getTimestampMillis(timestamp);
+    if (!millis) return 'N/A';
+    return new Date(millis).toLocaleString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
+  };
+  
+  const handleWhatsAppClick = (e: React.MouseEvent, mobileNumber?: string | null) => {
+    e.stopPropagation();
+  
+    if (!mobileNumber) return; // ✅ THIS LINE FIXES EVERYTHING
+  
+    const sanitizedPhone = mobileNumber.replace(/\D/g, '');
+    const internationalPhone = sanitizedPhone.startsWith('91')
+      ? sanitizedPhone
+      : `91${sanitizedPhone}`;
+  
+    const message = encodeURIComponent("Hi, I'm contacting you from Screenplay Pro.");
+  
+    window.open(`https://wa.me/${internationalPhone}?text=${message}`, '_blank');
+  };
+
+  return (
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col max-h-[80vh] relative">
+        <DialogHeader className="p-2 pb-4 border-b flex-shrink-0">
+          <div className="flex items-center space-x-4">
+            <Avatar className="h-16 w-16">
+              <AvatarImage src={user.photoURL || undefined} alt={user.displayName || "User"} />
+              <AvatarFallback className="text-2xl">
+                {user.displayName ? user.displayName.charAt(0).toUpperCase() : user.email ? user.email.charAt(0).toUpperCase() : <UserCircle />}
+              </AvatarFallback>
+            </Avatar>
+            <div>
+              <DialogTitle className="text-2xl">{isEditing ? "Edit User Details" : "User Details"}</DialogTitle>
+              <DialogDescription>
+                {isEditing ? `Modify information for ${user.displayName || user.email}.` : `Viewing details for ${user.displayName || user.email}.`}
+              </DialogDescription>
+            </div>
+          </div>
+        </DialogHeader>
+
+        <ScrollArea className="flex-grow overflow-y-auto pb-20">
+          <div className="p-2 space-y-6">
+            {isEditing ? (
+              <div className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="displayName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="flex items-center"><UserCircle className="mr-2 h-4 w-4 text-muted-foreground"/>Display Name</FormLabel>
+                      <FormControl><Input {...field} disabled={isSubmitting} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="username"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="flex items-center"><AtSign className="mr-2 h-4 w-4 text-muted-foreground"/>Username</FormLabel>
+                      <FormControl>
+                        <div className="relative">
+                          <Input 
+                            {...field} 
+                            disabled={isSubmitting} 
+                            placeholder="e.g., srikanth_123" 
+                          />
+                          <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                            {usernameStatus === 'checking' && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                            {usernameStatus === 'available' && <CheckCircle2 className="h-4 w-4 text-green-500" />}
+                            {usernameStatus === 'taken' && <XCircle className="h-4 w-4 text-destructive" />}
+                          </div>
+                        </div>
+                      </FormControl>
+                      {usernameStatus === 'taken' && suggestions.length > 0 && (
+                        <div className="mt-2 space-y-1">
+                          <p className="text-[10px] text-muted-foreground uppercase font-bold">Suggestions:</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {suggestions.map((sug) => (
+                              <Badge 
+                                key={sug} 
+                                variant="outline" 
+                                className="cursor-pointer hover:bg-primary hover:text-primary-foreground text-[10px] py-0 h-5"
+                                onClick={() => {
+                                  form.setValue("username", sug, { shouldValidate: true });
+                                  setUsernameStatus('available');
+                                }}
+                              >
+                                {sug}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      <FormDescription className="text-xs">Lowercase, numbers, and underscores only.</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="email"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="flex items-center"><Mail className="mr-2 h-4 w-4 text-muted-foreground"/>Email Address</FormLabel>
+                      <FormControl><Input type="email" {...field} disabled={isSubmitting} /></FormControl>
+                      <FormMessage />
+                      <FormDescription className="text-xs">Changing this only updates Firestore record, not Firebase Auth login email without Admin SDK.</FormDescription>
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="mobileNumber"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="flex items-center"><Phone className="mr-2 h-4 w-4 text-muted-foreground"/>Mobile Number</FormLabel>
+                      <FormControl><Input type="tel" {...field} disabled={isSubmitting} placeholder="e.g., +919876543210" /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                  <div className="flex items-center gap-1">
+                    <strong>Display Name:</strong> {user.displayName || "N/A"}
+                    {user.displayName && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-5 w-5 text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                        onClick={() => handleCopy(user.displayName!, 'name')}
+                        title="Copy Display Name"
+                      >
+                        {copiedField === 'name' ? <CheckCircle2 className="h-3 w-3 text-green-500 animate-in fade-in zoom-in-50" /> : <Copy className="h-3 w-3" />}
+                      </Button>
+                    )}
+                  </div>
+                  <div><strong>Username:</strong> {user.username ? `@${user.username}` : "N/A"}</div>
+                  <div className="flex items-center gap-1">
+                    <strong>Email:</strong> {user.email || "N/A"}
+                    {user.email && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-5 w-5 text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                        onClick={() => handleCopy(user.email!, 'email')}
+                        title="Copy Email Address"
+                      >
+                        {copiedField === 'email' ? <CheckCircle2 className="h-3 w-3 text-green-500 animate-in fade-in zoom-in-50" /> : <Copy className="h-3 w-3" />}
+                      </Button>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <strong>Mobile:</strong> {user.mobileNumber || "N/A"}
+                    {user.mobileNumber && (
+                      <>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-5 w-5 text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                          onClick={() => handleCopy(user.mobileNumber!, 'mobile')}
+                          title="Copy Mobile Number"
+                        >
+                          {copiedField === 'mobile' ? <CheckCircle2 className="h-3 w-3 text-green-500 animate-in fade-in zoom-in-50" /> : <Copy className="h-3 w-3" />}
+                        </Button>
+                        <Button type="button" variant="ghost" size="icon" className="h-6 w-6" onClick={(e) => handleWhatsAppClick(e, user.mobileNumber)} title="Chat on WhatsApp">
+                           <AppImage src="/whatsapp.png" alt="WhatsApp Icon" width={18} height={18} />
+                           <span className="sr-only">Chat on WhatsApp</span>
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <strong>User ID (UID):</strong> <span className="text-xs">{user.uid}</span>
+                    {user.uid && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-5 w-5 text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                        onClick={() => handleCopy(user.uid, 'uid')}
+                        title="Copy User ID (UID)"
+                      >
+                        {copiedField === 'uid' ? <CheckCircle2 className="h-3 w-3 text-green-500 animate-in fade-in zoom-in-50" /> : <Copy className="h-3 w-3" />}
+                      </Button>
+                    )}
+                  </div>
+                  <div><strong>Created At:</strong> {formatTimestampForIndia(user.createdAt)}</div>
+                  <div><strong>Last Login:</strong> {formatTimestampForIndia(user.lastLoginAt)}</div>
+                  <div>
+                    <strong>Status:</strong>
+                    <span className={`ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${user.isActive ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
+                      {user.isActive ? <CheckCircle className="mr-1 h-3 w-3"/> : <XCircle className="mr-1 h-3 w-3"/>}
+                      {user.isActive ? "Active" : "Disabled"}
+                    </span>
+                  </div>
+                  {user.roles && user.roles.length > 0 && <div><strong>Roles:</strong> {user.roles.join(', ')}</div>}
+                </div>
+              </div>
+            )}
+            <Separator className="my-4"/>
+            <div>
+              <h3 className="text-lg font-semibold mb-3">Saved Addresses ({user.addresses?.length || 0})</h3>
+              {user.addresses && user.addresses.length > 0 ? (
+                <div className="space-y-3">
+                  {user.addresses.map((address) => (
+                    <div key={address.id} className="p-3 border rounded-md text-xs bg-muted/30 overflow-x-hidden">
+                      <p className="font-semibold">{address.fullName}</p>
+                      <p>{address.addressLine1}{address.addressLine2 ? `, ${address.addressLine2}` : ''}</p>
+                      <p>{address.city}, {address.state} - {address.pincode}</p>
+                      <p>Ph: {address.phone}</p>
+                      {address.latitude && address.longitude && (
+                        <a href={`https://www.google.com/maps?q=${address.latitude},${address.longitude}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center gap-1 mt-1">
+                          <MapPin size={12}/> View on Map
+                        </a>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">No saved addresses for this user.</p>
+              )}
+            </div>
+          </div>
+        </ScrollArea>
+
+        <DialogFooter className="p-2 border-t bg-muted/50 flex-shrink-0 fixed bottom-0 left-0 right-0 z-10 !flex-row !justify-end !space-x-2">
+          <DialogClose asChild>
+            <Button type="button" variant="outline" onClick={() => { onClose(); setIsEditing(false); }} disabled={isSubmitting}>Close</Button>
+          </DialogClose>
+          {isEditing ? (
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              Save Changes
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              onClick={() => {
+                setTimeout(() => {
+                  setIsEditing(true);
+                }, 0);
+              }}
+            >
+              <Edit3 className="mr-2 h-4 w-4" /> Edit User
+            </Button>
+          )}
+        </DialogFooter>
+      </form>
+    </Form>
+  );
+}
