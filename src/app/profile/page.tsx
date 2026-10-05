@@ -6,13 +6,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/useAuth";
-import { ShieldAlert, KeyRound, Trash2, Loader2, Edit3, User as UserIcon, CheckCircle2 } from "lucide-react";
+import { ShieldAlert, KeyRound, Trash2, Loader2, Edit3, User as UserIcon, CheckCircle2, Mail } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { updateProfile, sendPasswordResetEmail, updateEmail } from "firebase/auth";
+import { updateProfile, sendPasswordResetEmail, updateEmail, sendEmailVerification } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { useToast } from '@/hooks/use-toast';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -40,6 +40,7 @@ export default function ProfilePage() {
   const [isEmailDialogOpen, setIsEmailDialogOpen] = useState(false);
   const [isSubmittingEmail, setIsSubmittingEmail] = useState(false);
   const [isSendingResetEmail, setIsSendingResetEmail] = useState(false);
+  const [isSendingVerification, setIsSendingVerification] = useState(false);
   const [deletionRequest, setDeletionRequest] = useState<any>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isSuccessDialogOpen, setIsSuccessDialogOpen] = useState(false);
@@ -135,6 +136,26 @@ export default function ProfilePage() {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } finally {
       setIsSendingResetEmail(false);
+    }
+  };
+
+  const handleSendVerificationEmail = async () => {
+    if (!auth.currentUser) return;
+    setIsSendingVerification(true);
+    try {
+      await sendEmailVerification(auth.currentUser);
+      toast({
+        title: "Verification Email Sent",
+        description: "A verification link has been sent to your email address. Please check your inbox.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error Sending Email",
+        description: error.message || "Could not send verification email.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSendingVerification(false);
     }
   };
 
@@ -251,16 +272,32 @@ export default function ProfilePage() {
                   </Button>
                 </div>
 
-                <div className="flex items-center justify-between p-4 bg-secondary/10 rounded-2xl border border-primary/5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-secondary/10 rounded-2xl border border-primary/5">
                   <div>
                     <p className="text-xs text-muted-foreground uppercase font-bold">Email Address</p>
                     <p className="text-sm font-semibold">{user?.email || firestoreUser?.email || 'N/A'}</p>
                   </div>
-                  {user?.emailVerified ? (
-                    <Badge variant="outline" className="text-emerald-600 border-emerald-300 bg-emerald-50">Verified</Badge>
-                  ) : (
-                    <Badge variant="outline" className="text-amber-600 border-amber-300 bg-amber-50">Unverified</Badge>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {user?.emailVerified ? (
+                      <Badge variant="outline" className="text-emerald-600 border-emerald-300 bg-emerald-50 flex items-center gap-1">
+                        <CheckCircle2 className="h-3.5 w-3.5" /> Verified
+                      </Badge>
+                    ) : (
+                      <>
+                        <Badge variant="outline" className="text-amber-600 border-amber-300 bg-amber-50">Unverified</Badge>
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          onClick={handleSendVerificationEmail}
+                          disabled={isSendingVerification}
+                          className="h-8 text-xs font-semibold"
+                        >
+                          {isSendingVerification ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Mail className="h-3.5 w-3.5 mr-1" />}
+                          Verify Email
+                        </Button>
+                      </>
+                    )}
+                  </div>
                 </div>
               </CardContent>
             </Card>
