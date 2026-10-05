@@ -9,8 +9,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Target, Globe, FileText, Type, Pilcrow, BarChart, Save, Loader2, Settings2, Map, Layers, RefreshCw } from "lucide-react";
 import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase';
-import { doc, getDoc, setDoc, Timestamp } from "firebase/firestore";
 import type { FirestoreSEOSettings, StructuredDataSocialProfiles } from '@/types/firestore';
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, Controller } from "react-hook-form";
@@ -20,9 +18,6 @@ import { defaultSeoValues } from '@/lib/seoUtils';
 import { useGlobalSEOSettings } from '@/hooks/useGlobalSEOSettings';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { triggerRefresh } from '@/lib/revalidateUtils';
-
-const SEO_SETTINGS_DOC_ID = "global";
-const SEO_SETTINGS_COLLECTION = "seoSettings";
 
 const seoSettingsSchema = z.object({
   siteName: z.string().min(1, "Site Name is required.").optional(),
@@ -90,11 +85,10 @@ export default function SEOSettingsPage() {
   const loadSettings = useCallback(async () => {
     setIsLoading(true);
     try {
-      const settingsDocRef = doc(db, SEO_SETTINGS_COLLECTION, SEO_SETTINGS_DOC_ID);
-      const docSnap = await getDoc(settingsDocRef);
-      if (docSnap.exists()) {
-        const data = docSnap.data() as FirestoreSEOSettings;
-        form.reset({ ...defaultSeoValues, ...data });
+      const res = await fetch('/api/db/settings?key=seoConfiguration');
+      const json = await res.json();
+      if (json.success && json.data) {
+        form.reset({ ...defaultSeoValues, ...json.data });
       } else {
         form.reset(defaultSeoValues);
       }
@@ -114,18 +108,21 @@ export default function SEOSettingsPage() {
   const handleSaveSettings = async (data: SEOSettingsFormData) => {
     setIsSaving(true);
     try {
-      const settingsDocRef = doc(db, SEO_SETTINGS_COLLECTION, SEO_SETTINGS_DOC_ID);
-      const dataToSave: FirestoreSEOSettings = {
+      const dataToSave = {
         ...data,
         socialProfileUrls: data.socialProfileUrls || {},
-        updatedAt: Timestamp.now(),
+        updatedAt: new Date().toISOString(),
       };
-      await setDoc(settingsDocRef, dataToSave, { merge: true });
+      await fetch('/api/db/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'seoConfiguration', data: dataToSave })
+      });
       await triggerRefresh('seo-settings');
       await triggerRefresh('global-cache');
       await triggerRefresh('sitemap');
-      await triggerRefresh('global'); // SmartSync: Refresh all SEO metadata
-      toast({ title: "Success", description: "SEO settings saved successfully." });
+      await triggerRefresh('global');
+      toast({ title: "Success", description: "SEO settings saved to MySQL successfully." });
     } catch (error) {
       console.error("Error saving SEO settings:", error);
       toast({ title: "Error", description: "Could not save SEO settings.", variant: "destructive" });
@@ -137,16 +134,19 @@ export default function SEOSettingsPage() {
   const handleResetToDefault = async () => {
     setIsSaving(true);
     try {
-      const settingsDocRef = doc(db, SEO_SETTINGS_COLLECTION, SEO_SETTINGS_DOC_ID);
-      const dataToSave: FirestoreSEOSettings = {
+      const dataToSave = {
         ...defaultSeoValues,
-        updatedAt: Timestamp.now(),
+        updatedAt: new Date().toISOString(),
       };
-      await setDoc(settingsDocRef, dataToSave, { merge: true });
+      await fetch('/api/db/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'seoConfiguration', data: dataToSave })
+      });
       await triggerRefresh('seo-settings');
       await triggerRefresh('global-cache');
       await triggerRefresh('sitemap');
-      await triggerRefresh('global'); // SmartSync: Refresh all SEO metadata
+      await triggerRefresh('global');
       form.reset(defaultSeoValues);
       toast({ title: "Reset Successful", description: "SEO settings have been restored to defaults." });
     } catch (error) {

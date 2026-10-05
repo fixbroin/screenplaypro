@@ -1,14 +1,11 @@
-
 "use client";
 
 import Link from "next/link";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardTitle } from "@/components/ui/card";
 import { BellRing, BellOff, ArrowLeft, CheckCircle2, Info, AlertTriangle, Tag, Loader2, Trash2 as TrashIcon } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { db } from "@/lib/firebase";
-import { collection, query, where, onSnapshot, orderBy, doc, updateDoc, writeBatch, Timestamp, getDocs, limit } from "firebase/firestore";
 import type { FirestoreNotification } from "@/types/firestore";
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from 'date-fns';
@@ -48,67 +45,65 @@ export default function NotificationsPage() {
     setIsMounted(true);
   }, []);
 
+  const fetchNotifications = useCallback(async () => {
+    if (!user) return;
+    setIsLoadingNotifications(true);
+    try {
+      const res = await fetch('/api/db/collections?name=userNotifications');
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        const userNotifs = json.data.filter((item: any) => item.userId === user.uid);
+        setNotifications(userNotifs);
+      }
+    } catch (error) {
+      console.error("Error fetching notifications: ", error);
+      toast({ title: "Error", description: "Could not fetch notifications.", variant: "destructive" });
+    } finally {
+      setIsLoadingNotifications(false);
+    }
+  }, [user, toast]);
+
   useEffect(() => {
     if (!isMounted || !user || authLoading) {
       if (!authLoading && !user && isMounted) setIsLoadingNotifications(false);
       return;
     }
-
-    setIsLoadingNotifications(true);
-    const notificationsCollectionRef = collection(db, "userNotifications");
-    // Added limit(50) to prevent excessive reads while still showing a good history
-    const q = query(
-      notificationsCollectionRef,
-      where("userId", "==", user.uid),
-      orderBy("createdAt", "desc"),
-      limit(20)
-    );
-
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const fetchedNotifications = querySnapshot.docs.map(docSnap => ({
-        ...docSnap.data(),
-        id: docSnap.id,
-      } as FirestoreNotification));
-      setNotifications(fetchedNotifications);
-      setIsLoadingNotifications(false);
-    }, (error) => {
-      console.error("Error fetching notifications: ", error);
-      toast({ title: "Error", description: "Could not fetch notifications.", variant: "destructive" });
-      setIsLoadingNotifications(false);
-    });
-
-    return () => unsubscribe();
-  }, [user, authLoading, toast, isMounted]);
+    fetchNotifications();
+  }, [user, authLoading, isMounted, fetchNotifications]);
 
   const handleMarkAsRead = async (notificationId?: string) => {
     if (!user || !notificationId) return;
-    
-    const notificationRef = doc(db, "userNotifications", notificationId);
+    const notif = notifications.find(n => n.id === notificationId);
+    if (!notif) return;
+    const updated = { ...notif, read: true };
     try {
-      await updateDoc(notificationRef, { read: true });
+      await fetch('/api/db/collections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ collectionName: 'userNotifications', id: notificationId, data: updated })
+      });
+      setNotifications(prev => prev.map(n => n.id === notificationId ? updated : n));
     } catch (error) {
       console.error("Error marking notification as read: ", error);
-      toast({ title: "Error", description: "Could not update notification status.", variant: "destructive" });
     }
   };
 
   const handleMarkAllAsRead = async () => {
     if (!user || notifications.filter(n => !n.read).length === 0) return;
-    
     showLoading();
-    const batch = writeBatch(db);
-    notifications.forEach(notification => {
-      if (!notification.read && notification.id) {
-        const notificationRef = doc(db, "userNotifications", notification.id);
-        batch.update(notificationRef, { read: true });
-      }
-    });
-
     try {
-      await batch.commit();
+      await Promise.all(
+        notifications.filter(n => !n.read && n.id).map(n => 
+          fetch('/api/db/collections', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ collectionName: 'userNotifications', id: n.id, data: { ...n, read: true } })
+          })
+        )
+      );
+      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
       toast({ title: "Success", description: "All notifications marked as read." });
     } catch (error) {
-      console.error("Error marking all notifications as read: ", error);
       toast({ title: "Error", description: "Could not mark all as read.", variant: "destructive" });
     } finally {
       hideLoading();
@@ -119,42 +114,15 @@ export default function NotificationsPage() {
     if (!user) return;
     setIsClearing(true);
     try {
-      const notificationsCollectionRef = collection(db, "userNotifications");
-      const q = query(notificationsCollectionRef, where("userId", "==", user.uid));
-      const querySnapshot = await getDocs(q);
-
-      if (querySnapshot.empty) {
-        toast({ title: "No Notifications", description: "You have no notifications to clear.", variant: "default" });
-        setIsClearing(false);
-        return;
-      }
-
-      const batchArray = [];
-      let currentBatch = writeBatch(db);
-      let currentBatchSize = 0;
-
-      querySnapshot.docs.forEach((doc) => {
-        currentBatch.delete(doc.ref);
-        currentBatchSize++;
-        if (currentBatchSize === 500) {
-          batchArray.push(currentBatch);
-          currentBatch = writeBatch(db);
-          currentBatchSize = 0;
-        }
-      });
-
-      if (currentBatchSize > 0) {
-        batchArray.push(currentBatch);
-      }
-
-      for (const batch of batchArray) {
-        await batch.commit();
-      }
-
+      await Promise.all(
+        notifications.filter(n => n.id).map(n =>
+          fetch(`/api/db/collections?name=userNotifications&id=${n.id}`, { method: 'DELETE' })
+        )
+      );
+      setNotifications([]);
       toast({ title: "Notifications Cleared", description: "All your notifications have been cleared." });
     } catch (error) {
-      console.error("Error clearing user notifications: ", error);
-      toast({ title: "Error Clearing", description: (error as Error).message || "Could not clear your notifications.", variant: "destructive" });
+      toast({ title: "Error Clearing", description: "Could not clear your notifications.", variant: "destructive" });
     } finally {
       setIsClearing(false);
     }
@@ -272,7 +240,7 @@ export default function NotificationsPage() {
             </Card>
           ))}
         </div>
-      )}
+      ) }
     </div>
   );
 }

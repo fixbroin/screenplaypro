@@ -1,19 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { doc, onSnapshot, getDoc, Timestamp } from "firebase/firestore";
-import { db } from '@/lib/firebase';
-import type { GlobalWebSettings, ThemeColors, ThemePalette, GlobalAdminPopup, LoaderType } from '@/types/firestore';
+import { useState, useEffect, useRef } from 'react';
+import type { GlobalWebSettings, ThemePalette, GlobalAdminPopup } from '@/types/firestore';
 import { DEFAULT_LIGHT_THEME_COLORS_HSL, DEFAULT_DARK_THEME_COLORS_HSL, THEME_PALETTE_KEYS } from '@/lib/colorUtils';
 import { defaultGlobalWebSettings } from '@/config/webDefaults';
 import { getCache, setCache } from '@/lib/client-cache';
 import { usePathname } from 'next/navigation';
-import { getTimestampMillis } from '@/lib/utils';
 
-const WEB_SETTINGS_DOC_ID = "global";
-const WEB_SETTINGS_COLLECTION = "webSettings";
 const CACHE_KEY = "global-web-settings";
-const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 
 const isBot = (): boolean => {
   if (typeof window === 'undefined') return true;
@@ -46,14 +40,6 @@ const processSettingsData = (data: Partial<GlobalWebSettings>): GlobalWebSetting
     ...(data.globalAdminPopup || {}),
   } as GlobalAdminPopup;
 
-  // Fix: Convert sentAt to real Timestamp if it's a plain object from cache
-  if (globalAdminPopup.sentAt && !(globalAdminPopup.sentAt instanceof Timestamp)) {
-    const millis = getTimestampMillis(globalAdminPopup.sentAt);
-    if (millis) {
-      globalAdminPopup.sentAt = Timestamp.fromMillis(millis);
-    }
-  }
-
   return {
     ...defaultGlobalWebSettings,
     ...data,
@@ -77,12 +63,10 @@ export function useGlobalSettings() {
   const [isLoading, setIsLoading] = useState(!getCache(CACHE_KEY, true));
   const [error, setError] = useState<string | null>(null);
   const pathname = usePathname();
-  const isAdmin = pathname?.startsWith('/admin');
   const hasLoadedRef = useRef(false);
   const isVisitorBot = useRef(isBot());
 
-  useEffect(() => {
-    // If it's a bot, skip fetching to save reads
+  const fetchSettings = () => {
     if (isVisitorBot.current) {
       setIsLoading(false);
       return;
@@ -96,35 +80,20 @@ export function useGlobalSettings() {
           const processed = processSettingsData(data.settings);
           setSettings(processed);
           setCache(CACHE_KEY, processed, true);
-          setIsLoading(false);
-          hasLoadedRef.current = true;
-          return;
-        }
-        // Fallback to Firestore listener if MySQL empty
-        subscribeFirestore();
-      })
-      .catch(() => {
-        subscribeFirestore();
-      });
-
-    function subscribeFirestore() {
-      const settingsDocRef = doc(db, WEB_SETTINGS_COLLECTION, WEB_SETTINGS_DOC_ID);
-      return onSnapshot(settingsDocRef, (docSnap) => {
-        if (docSnap.exists()) {
-          const processed = processSettingsData(docSnap.data());
-          setSettings(processed);
-          setCache(CACHE_KEY, processed, true);
         }
         setIsLoading(false);
         hasLoadedRef.current = true;
-      }, (err: any) => {
-        console.error("Error fetching settings:", err);
+      })
+      .catch((err) => {
+        console.error("Error fetching web settings from MySQL:", err);
         setError("Failed to load settings.");
         setIsLoading(false);
       });
-    }
+  };
+
+  useEffect(() => {
+    fetchSettings();
   }, []);
 
-  return { settings, isLoading, error };
+  return { settings, isLoading, error, reloadSettings: fetchSettings, refetchSettings: fetchSettings };
 }
-

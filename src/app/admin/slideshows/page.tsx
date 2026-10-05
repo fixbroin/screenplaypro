@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect } from 'react';
@@ -8,21 +7,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { PlusCircle, Edit, Trash2, PlaySquare, Loader2, CheckCircle, XCircle } from "lucide-react";
-import type { FirestoreSlide, SlideButtonLinkType, FirestoreCategory, FirestoreSubCategory, FirestoreService } from '@/types/firestore';
+import type { FirestoreSlide, FirestoreCategory, FirestoreSubCategory, FirestoreService } from '@/types/firestore';
 import SlideshowForm from '@/components/admin/SlideshowForm';
-import { db, storage } from '@/lib/firebase';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, getDoc, orderBy, query, Timestamp } from "firebase/firestore";
 import { deleteLocalImage } from '@/lib/fileUploadUtils';
 import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { clearCache } from '@/lib/client-cache';
 import { triggerRefresh } from '@/lib/revalidateUtils';
-
-
-
-const isFirebaseStorageUrl = (url: string): boolean => {
-  if (!url) return false;
-  return typeof url === 'string' && url.includes("firebasestorage.googleapis.com");
-};
 
 export default function AdminSlideshowsPage() {
   const [slides, setSlides] = useState<FirestoreSlide[]>([]);
@@ -37,22 +28,25 @@ export default function AdminSlideshowsPage() {
   const [isMounted, setIsMounted] = useState(false);
   const { toast } = useToast();
 
-  const slidesCollectionRef = collection(db, "adminSlideshows");
-
   const fetchDataForForm = async () => {
     try {
-      const catPromise = getDocs(query(collection(db, "adminCategories"), orderBy("name")));
-      const subCatPromise = getDocs(query(collection(db, "adminSubCategories"), orderBy("name")));
-      const servPromise = getDocs(query(collection(db, "adminServices"), orderBy("name")));
+      const [catRes, subCatRes, servRes] = await Promise.all([
+        fetch('/api/db/collections?name=adminCategories'),
+        fetch('/api/db/collections?name=adminSubCategories'),
+        fetch('/api/db/collections?name=adminServices')
+      ]);
 
-      const [catSnap, subCatSnap, servSnap] = await Promise.all([catPromise, subCatPromise, servPromise]);
-      
-      setCategories(catSnap.docs.map(d => ({ id: d.id, ...d.data() } as FirestoreCategory)));
-      setSubCategories(subCatSnap.docs.map(d => ({ id: d.id, ...d.data() } as FirestoreSubCategory)));
-      setServices(servSnap.docs.map(d => ({ id: d.id, ...d.data() } as FirestoreService)));
+      const [catData, subCatData, servData] = await Promise.all([
+        catRes.json(),
+        subCatRes.json(),
+        servRes.json()
+      ]);
+
+      if (catData.success && Array.isArray(catData.data)) setCategories(catData.data);
+      if (subCatData.success && Array.isArray(subCatData.data)) setSubCategories(subCatData.data);
+      if (servData.success && Array.isArray(servData.data)) setServices(servData.data);
     } catch (error) {
       console.error("Error fetching data for slideshow form: ", error);
-      toast({ title: "Error", description: "Could not load data needed for the slideshow form.", variant: "destructive" });
     }
   };
 
@@ -64,16 +58,8 @@ export default function AdminSlideshowsPage() {
         const data = await res.json();
         if (data.success && Array.isArray(data.slides)) {
           setSlides(data.slides);
-          setIsLoading(false);
-          return;
         }
       }
-
-      // Fallback to Firestore
-      const q = query(slidesCollectionRef, orderBy("order", "asc"));
-      const data = await getDocs(q);
-      const fetchedSlides = data.docs.map((doc) => ({ ...doc.data(), id: doc.id } as FirestoreSlide));
-      setSlides(fetchedSlides);
     } catch (error) {
       console.error("Error fetching slides: ", error);
       toast({ title: "Error", description: "Could not fetch slides.", variant: "destructive" });
@@ -106,16 +92,19 @@ export default function AdminSlideshowsPage() {
         await deleteLocalImage(slideData.imageUrl);
       }
 
-      await fetch(`/api/db/slideshows?slideId=${slideId}`, { method: 'DELETE' });
-      try { await deleteDoc(doc(db, "adminSlideshows", slideId)); } catch (e) {}
+      const res = await fetch(`/api/db/slideshows?slideId=${slideId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to delete slide.');
+      }
 
       setSlides(slides.filter(s => s.id !== slideId));
+      clearCache();
       toast({ title: "Success", description: "Slide deleted successfully from MySQL." });
       await triggerRefresh('slideshows');
-      await triggerRefresh('sitemap');
     } catch (error) {
       console.error("Error deleting slide: ", error);
-      toast({ title: "Error", description: "Could not delete slide.", variant: "destructive" });
+      toast({ title: "Error", description: (error as Error).message || "Could not delete slide.", variant: "destructive" });
     } finally {
       setIsSubmitting(false);
     }
@@ -129,31 +118,32 @@ export default function AdminSlideshowsPage() {
       id: data.id,
       title: data.title || "",
       subtitle: data.description || "",
+      description: data.description || "",
       imageUrl: finalImageUrl,
       ctaText: data.buttonText || "",
+      buttonText: data.buttonText || "",
       ctaLink: data.buttonLinkValue || "",
+      buttonLinkValue: data.buttonLinkValue || "",
+      buttonLinkType: data.buttonLinkType || "url",
+      imageHint: data.imageHint || "",
       order: Number(data.order || 0),
       isActive: data.isActive === undefined ? true : data.isActive,
     };
     
     try {
-      await fetch('/api/db/slideshows', {
+      const res = await fetch('/api/db/slideshows', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
+      const resData = await res.json();
+      if (!res.ok || !resData.success) {
+        throw new Error(resData.error || 'Failed to save slide.');
+      }
 
-      try {
-        if (editingSlide && data.id) { 
-          await updateDoc(doc(db, "adminSlideshows", data.id), { ...payload, updatedAt: Timestamp.now() });
-        } else { 
-          await addDoc(slidesCollectionRef, { ...payload, createdAt: Timestamp.now() });
-        }
-      } catch (e) {}
-
+      clearCache();
       toast({ title: "Success", description: "Slide saved to MySQL successfully." });
       await triggerRefresh('slideshows');
-      await triggerRefresh('sitemap');
       setIsFormOpen(false);
       setEditingSlide(null);
       await fetchSlides(); 
@@ -191,7 +181,6 @@ export default function AdminSlideshowsPage() {
     }
     return `${prefix}${linkValue}`;
   };
-
 
   if (!isMounted) {
      return (
@@ -295,8 +284,7 @@ export default function AdminSlideshowsPage() {
                               <AlertDialogHeader>
                                 <AlertDialogTitle>Are you sure?</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  This will permanently delete the slide "{slide.title || 'Untitled Slide'}"
-                                  {slide.imageUrl && isFirebaseStorageUrl(slide.imageUrl) ? " and its image." : "."}
+                                  This will permanently delete the slide "{slide.title || 'Untitled Slide'}".
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
@@ -345,5 +333,3 @@ export default function AdminSlideshowsPage() {
     </div>
   );
 }
-    
-    

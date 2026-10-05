@@ -7,10 +7,8 @@ import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Sparkles, ShieldCheck, Check, Loader2, FileText, Lock, ArrowLeft, CheckCircle2 } from 'lucide-react';
+import { Sparkles, ShieldCheck, Check, Loader2, Lock, ArrowLeft, CheckCircle2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
 import type { SubscriptionPlan } from '@/types/firestore';
 import Script from 'next/script';
 
@@ -90,249 +88,197 @@ export default function SubscriptionPaymentPage() {
           setSelectedPlan(DEFAULT_PLANS_MAP[planId]);
         }
         
-        const docRef = doc(db, 'adminSubscriptionPlans', planId);
-        const docSnap = await getDoc(docRef);
-        
-        if (docSnap.exists()) {
-          setSelectedPlan({ id: docSnap.id, ...docSnap.data() } as SubscriptionPlan);
-        } else if (!DEFAULT_PLANS_MAP[planId]) {
-          // Fallback to monthly if not found
-          setSelectedPlan(DEFAULT_PLANS_MAP.plan_monthly);
+        const res = await fetch('/api/db/subscription-plans');
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && Array.isArray(json.plans)) {
+            const found = json.plans.find((p: any) => p.id === planId);
+            if (found) setSelectedPlan(found);
+          }
         }
-      } catch (error) {
-        console.error("Error loading plan details:", error);
-        setSelectedPlan(DEFAULT_PLANS_MAP.plan_monthly);
+      } catch (e) {
+        console.error("Error loading subscription plan:", e);
       } finally {
         setIsLoadingPlan(false);
       }
     }
-
     loadPlan();
   }, [planId]);
 
-  const handleActivateSubscription = async (paymentDetails?: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => {
-    if (!user) return;
-    setIsProcessing(true);
-
-    try {
-      const response = await fetch('/api/subscription/activate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.uid,
-          planId: selectedPlan?.id || planId,
-          isTestMode: !paymentDetails,
-          ...paymentDetails
-        })
-      });
-
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Failed to activate subscription.');
-      }
-
-      setIsSuccess(true);
-      toast({
-        title: "Subscription Activated! 🎉",
-        description: `Your ${selectedPlan?.name || 'Screenplay Pro'} subscription is now active!`,
-      });
-
-      setTimeout(() => {
-        router.push(returnUrl);
-      }, 1500);
-
-    } catch (error: any) {
-      console.error("Error activating subscription:", error);
-      toast({
-        title: "Activation Error",
-        description: error.message || "Failed to process subscription.",
-        variant: "destructive"
-      });
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const handleRazorpayPayment = async () => {
+  const handlePayment = async () => {
     if (!user || !selectedPlan) return;
     setIsProcessing(true);
 
     try {
-      // 1. Create Order via API
-      const orderRes = await fetch('/api/razorpay/create-order', {
+      const orderRes = await fetch('/api/subscriptions/razorpay-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          amount: selectedPlan.price * 100, // paise
-          currency: 'INR'
+          planId: selectedPlan.id,
+          planName: selectedPlan.name,
+          amount: selectedPlan.price,
+          durationDays: selectedPlan.durationDays,
+          userId: user.uid,
+          userEmail: user.email,
+          userName: user.displayName || 'Screenwriter'
         })
       });
 
       const orderData = await orderRes.json();
 
-      if (orderRes.ok && orderData.success && typeof window !== 'undefined' && window.Razorpay) {
-        // Razorpay keys exist and window.Razorpay is ready
-        const options = {
-          key: orderData.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
-          amount: orderData.amount,
-          currency: orderData.currency,
-          name: "Screenplay Pro",
-          description: `${selectedPlan.name} Subscription`,
-          order_id: orderData.id,
-          prefill: {
-            name: firestoreUser?.displayName || user.displayName || 'Screenwriter',
-            email: user.email || firestoreUser?.email || '',
-            contact: firestoreUser?.mobileNumber || ''
-          },
-          theme: {
-            color: "#0f766e" // Primary Teal
-          },
-          handler: async function (response: any) {
-            await handleActivateSubscription({
-              razorpay_order_id: response.razorpay_order_id,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature
-            });
-          },
-          modal: {
-            ondismiss: function () {
-              setIsProcessing(false);
-            }
-          }
-        };
-
-        const razorpayInstance = new window.Razorpay(options);
-        razorpayInstance.open();
-      } else {
-        // Fallback: If Razorpay keys are not set on backend or test mode, proceed with instant activation
-        console.warn("Razorpay order endpoint returned error or keys unconfigured. Using instant activation fallback.");
-        await handleActivateSubscription();
+      if (!orderRes.ok || !orderData.success) {
+        throw new Error(orderData.error || 'Failed to initialize payment gateway.');
       }
-    } catch (error) {
-      console.warn("Razorpay popup error. Falling back to instant activation:", error);
-      await handleActivateSubscription();
+
+      // Razorpay Checkout
+      const options = {
+        key: orderData.razorpayKeyId,
+        amount: orderData.amount,
+        currency: orderData.currency || 'INR',
+        name: 'Screenplay Pro',
+        description: `Subscription: ${selectedPlan.name}`,
+        order_id: orderData.orderId,
+        handler: async function (response: any) {
+          try {
+            const verifyRes = await fetch('/api/subscriptions/verify-payment', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+                userId: user.uid,
+                planId: selectedPlan.id,
+                planName: selectedPlan.name,
+                durationDays: selectedPlan.durationDays
+              })
+            });
+
+            const verifyData = await verifyRes.json();
+            if (verifyRes.ok && verifyData.success) {
+              setIsSuccess(true);
+              toast({
+                title: "Subscription Activated! 🎉",
+                description: `You are now subscribed to ${selectedPlan.name}.`,
+              });
+              setTimeout(() => {
+                router.push(returnUrl);
+              }, 2500);
+            } else {
+              throw new Error(verifyData.error || 'Payment verification failed.');
+            }
+          } catch (err: any) {
+            toast({
+              title: "Activation Error",
+              description: err.message || "Failed to activate subscription.",
+              variant: "destructive"
+            });
+          } finally {
+            setIsProcessing(false);
+          }
+        },
+        prefill: {
+          name: user.displayName || '',
+          email: user.email || '',
+        },
+        theme: {
+          color: '#3b82f6'
+        }
+      };
+
+      if (typeof window !== 'undefined' && window.Razorpay) {
+        const rzp = new window.Razorpay(options);
+        rzp.open();
+      } else {
+        throw new Error('Razorpay SDK failed to load. Please refresh and try again.');
+      }
+    } catch (error: any) {
+      toast({
+        title: "Payment Initialization Failed",
+        description: error.message || "Could not launch payment gateway.",
+        variant: "destructive"
+      });
+      setIsProcessing(false);
     }
   };
 
   if (isLoadingPlan) {
     return (
-      <div className="flex justify-center items-center min-h-[60vh]">
+      <div className="flex justify-center items-center py-24">
         <Loader2 className="h-10 w-10 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!selectedPlan) {
+    return (
+      <div className="text-center py-20 space-y-4">
+        <h2 className="text-2xl font-bold">Plan Not Found</h2>
+        <Button onClick={() => router.push('/subscriptions')}>Back to Subscriptions</Button>
       </div>
     );
   }
 
   return (
     <ProtectedRoute>
-      <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="lazyOnload" />
+      <Script src="https://checkout.razorpay.com/v1/checkout.js" />
+      <div className="container mx-auto px-4 py-8 max-w-xl space-y-6">
+        <Button variant="ghost" size="sm" onClick={() => router.back()} className="text-muted-foreground">
+          <ArrowLeft className="h-4 w-4 mr-2" /> Back
+        </Button>
 
-      <div className="min-h-screen bg-background py-10 px-4">
-        <div className="container mx-auto max-w-xl">
-          
-          <Button 
-            variant="ghost" 
-            className="mb-6 rounded-xl text-muted-foreground hover:text-foreground"
-            onClick={() => router.push('/subscriptions')}
-          >
-            <ArrowLeft className="h-4 w-4 mr-2" /> Back to Plans
-          </Button>
-
-          {isSuccess ? (
-            <Card className="border-emerald-500/30 bg-emerald-500/5 shadow-2xl rounded-3xl p-8 text-center space-y-4">
-              <div className="h-16 w-16 bg-emerald-500/20 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
-                <CheckCircle2 className="h-10 w-10 animate-bounce" />
+        {isSuccess ? (
+          <Card className="border-emerald-500/30 bg-emerald-500/5 text-center p-8 space-y-4">
+            <div className="h-16 w-16 rounded-full bg-emerald-500/10 text-emerald-500 flex items-center justify-center mx-auto">
+              <CheckCircle2 className="h-10 w-10" />
+            </div>
+            <h2 className="text-2xl font-black text-emerald-600">Payment Successful!</h2>
+            <p className="text-sm text-muted-foreground">Your subscription is active. Redirecting you back to your workspace...</p>
+          </Card>
+        ) : (
+          <Card className="border-primary/10 shadow-lg">
+            <CardHeader className="text-center pb-4 border-b">
+              <Badge variant="outline" className="w-fit mx-auto mb-2 text-xs font-bold uppercase tracking-wider text-primary">
+                Secure Checkout
+              </Badge>
+              <CardTitle className="text-2xl font-black">{selectedPlan.name}</CardTitle>
+              <CardDescription>Review your plan details before proceeding to payment.</CardDescription>
+            </CardHeader>
+            <CardContent className="pt-6 space-y-6">
+              <div className="flex justify-between items-baseline p-4 rounded-2xl bg-secondary/20">
+                <span className="font-bold text-sm">Total Amount</span>
+                <span className="text-3xl font-black text-primary">₹{selectedPlan.price}</span>
               </div>
-              <h2 className="text-3xl font-black tracking-tight">Payment Successful!</h2>
-              <p className="text-muted-foreground text-sm font-medium">
-                Your <strong>{selectedPlan?.name}</strong> has been activated successfully.
-              </p>
-              <p className="text-xs text-muted-foreground pt-2">
-                Redirecting you back to your scripts...
-              </p>
-            </Card>
-          ) : (
-            <Card className="border-primary/20 shadow-2xl rounded-3xl overflow-hidden">
-              <CardHeader className="bg-gradient-to-r from-primary/10 via-primary/5 to-transparent p-6 sm:p-8 border-b border-primary/10">
-                <div className="flex items-center justify-between mb-2">
-                  <Badge variant="outline" className="px-3 py-1 border-primary/20 text-primary bg-primary/10 font-bold uppercase tracking-wider text-[10px] rounded-full">
-                    <Sparkles className="h-3 w-3 mr-1" /> Checkout
-                  </Badge>
-                  <span className="text-xs text-muted-foreground font-bold flex items-center gap-1">
-                    <Lock className="h-3 w-3 text-emerald-600" /> Secure 256-Bit SSL
-                  </span>
-                </div>
-                <CardTitle className="text-2xl sm:text-3xl font-black tracking-tight">
-                  Complete Subscription
-                </CardTitle>
-                <CardDescription className="text-muted-foreground text-sm font-medium pt-1">
-                  Upgrade to Screenplay Pro for unlimited PDF script exports and cloud sync.
-                </CardDescription>
-              </CardHeader>
 
-              <CardContent className="p-6 sm:p-8 space-y-6">
-                
-                {/* PLAN SUMMARY */}
-                <div className="p-5 rounded-2xl bg-secondary/30 border border-primary/10 space-y-3">
-                  <div className="flex justify-between items-baseline">
-                    <div>
-                      <h3 className="text-lg font-black text-foreground">{selectedPlan?.name}</h3>
-                      <p className="text-xs text-muted-foreground font-medium">
-                        {selectedPlan?.durationDays === 3650 ? 'Lifetime Access' : `${selectedPlan?.durationDays} Days Access`}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-2xl font-black text-primary">₹{selectedPlan?.price}</span>
-                      <span className="text-xs text-muted-foreground font-bold block">One-Time Payment</span>
-                    </div>
+              <div className="space-y-2">
+                <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Included Features:</p>
+                {selectedPlan.features?.map((feat, idx) => (
+                  <div key={idx} className="flex items-start gap-2 text-xs font-medium">
+                    <Check className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
+                    <span>{feat}</span>
                   </div>
-
-                  <div className="pt-3 border-t border-primary/10 space-y-2">
-                    <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Plan Highlights:</p>
-                    {selectedPlan?.features.map((feat, idx) => (
-                      <div key={idx} className="flex items-center text-xs font-medium gap-2">
-                        <Check className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
-                        <span>{feat}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* USER ACCOUNT SUMMARY */}
-                <div className="p-4 rounded-2xl bg-secondary/10 border border-primary/5 space-y-1">
-                  <p className="text-xs text-muted-foreground uppercase font-bold">Subscribing As</p>
-                  <p className="text-sm font-bold text-foreground">{user?.displayName || firestoreUser?.displayName || 'Screenwriter'}</p>
-                  <p className="text-xs text-muted-foreground font-medium">{user?.email || firestoreUser?.email}</p>
-                </div>
-
-              </CardContent>
-
-              <CardFooter className="p-6 sm:p-8 bg-secondary/20 border-t border-primary/10 flex flex-col gap-3">
-                <Button 
-                  size="lg" 
-                  className="w-full rounded-2xl font-black text-base py-6 shadow-xl bg-primary text-primary-foreground hover:bg-primary/90 transition-all"
-                  onClick={handleRazorpayPayment}
-                  disabled={isProcessing}
-                >
-                  {isProcessing ? (
-                    <>
-                      <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Processing Payment...
-                    </>
-                  ) : (
-                    <>
-                      <ShieldCheck className="mr-2 h-5 w-5" /> Pay ₹{selectedPlan?.price} & Activate Now
-                    </>
-                  )}
-                </Button>
-
-                <p className="text-[11px] text-muted-foreground text-center font-medium leading-relaxed">
-                  By completing payment, your Screenplay Pro PDF export privileges will activate instantly for your account.
-                </p>
-              </CardFooter>
-            </Card>
-          )}
-
-        </div>
+                ))}
+              </div>
+            </CardContent>
+            <CardFooter className="pt-4 flex flex-col gap-3">
+              <Button 
+                onClick={handlePayment} 
+                disabled={isProcessing}
+                className="w-full h-12 font-bold text-base rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 shadow-md"
+              >
+                {isProcessing ? (
+                  <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                ) : (
+                  <Lock className="h-4 w-4 mr-2" />
+                )}
+                Pay ₹{selectedPlan.price} Securely
+              </Button>
+              <p className="text-[11px] text-center text-muted-foreground flex items-center justify-center gap-1">
+                <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" /> 256-Bit Encrypted Razorpay Gateway
+              </p>
+            </CardFooter>
+          </Card>
+        )}
       </div>
     </ProtectedRoute>
   );

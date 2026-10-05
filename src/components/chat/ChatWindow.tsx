@@ -89,25 +89,30 @@ export default function ChatWindow({ onClose, otherUserId, otherUserName, otherU
       }
 
       // Otherwise, fallback to Support Admin logic
-      if (globalSettings?.adminUserUidForChat) {
-         const adminDocSnap = await getDoc(doc(db, "users", globalSettings.adminUserUidForChat));
-         if (adminDocSnap.exists()) {
-            const adminData = adminDocSnap.data();
-            setOtherUser({ displayName: adminData.displayName, photoURL: adminData.photoURL, uid: adminDocSnap.id });
+      try {
+        if (globalSettings?.adminUserUidForChat) {
+          const res = await fetch(`/api/db/users?id=${globalSettings.adminUserUidForChat}`);
+          const json = await res.json();
+          if (json.success && json.user) {
+            setOtherUser({ displayName: json.user.displayName || "Admin", photoURL: json.user.photoURL || null, uid: json.user.id });
             setIsLoadingOtherUser(false);
             return;
-         }
-      }
-      const adminQuery = query(collection(db, "users"), where("email", "==", ADMIN_EMAIL), limit(1));
-      const adminSnapshot = await getDocs(adminQuery);
-      if (!adminSnapshot.empty) {
-        const adminData = adminSnapshot.docs[0].data();
-        const adminUid = adminSnapshot.docs[0].id;
-        setOtherUser({ displayName: adminData.displayName || null, photoURL: adminData.photoURL || null, uid: adminUid });
-      } else {
+          }
+        }
+
+        const adminRes = await fetch(`/api/db/users?email=${encodeURIComponent(ADMIN_EMAIL)}`);
+        const adminJson = await adminRes.json();
+        if (adminJson.success && adminJson.user) {
+          setOtherUser({ displayName: adminJson.user.displayName || "Admin", photoURL: adminJson.user.photoURL || null, uid: adminJson.user.id });
+        } else {
+          setOtherUser({ displayName: ADMIN_FALLBACK_NAME, photoURL: null, uid: 'admin_master_id' });
+        }
+      } catch (err) {
+        console.error("Error fetching admin user for chat:", err);
         setOtherUser({ displayName: ADMIN_FALLBACK_NAME, photoURL: null, uid: 'admin_master_id' });
+      } finally {
+        setIsLoadingOtherUser(false);
       }
-      setIsLoadingOtherUser(false);
     };
 
     if (!isLoadingGlobalSettings) {

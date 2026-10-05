@@ -1,9 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server';
-import { adminDb } from '@/lib/firebaseAdmin';
-import { initFirebaseAdmin } from '@/lib/firebase-admin';
+import { queryDb } from '@/lib/mysql';
 import { getSitemapEntries } from '@/app/sitemap';
 import { submitToGoogleIndexing } from '@/lib/googleIndexing';
-import { Timestamp } from 'firebase-admin/firestore';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,53 +12,62 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    initFirebaseAdmin();
     console.log("[Google Indexing Cron] Job started at:", new Date().toISOString());
 
-    // 1. Fetch settings from Firestore
-    const settingsDoc = await adminDb.collection('appConfiguration').doc('googleIndexingSettings').get();
-    if (!settingsDoc.exists || !settingsDoc.data()?.isCronActive) {
+    const settingsRows = await queryDb<any[]>(
+      "SELECT data FROM generic_collections WHERE collection_name = 'appConfiguration' AND id = 'googleIndexingSettings'"
+    ).catch(() => []);
+
+    let isCronActive = false;
+    if (settingsRows.length > 0) {
+      try {
+        const data = JSON.parse(settingsRows[0].data);
+        isCronActive = !!data?.isCronActive;
+      } catch (e) {}
+    }
+
+    if (!isCronActive) {
       console.log("[Google Indexing Cron] Bulk cron is inactive or disabled. Aborting.");
       return NextResponse.json({ success: true, message: "Bulk cron is disabled in settings. Aborted." });
     }
 
-    // 2. Fetch sitemap URLs
     const sitemapEntries = await getSitemapEntries();
     const sitemapUrls = sitemapEntries.map(entry => entry.url);
     const totalSiteUrls = sitemapUrls.length;
 
-    // 3. Fetch successfully submitted logs
-    const logsSnapshot = await adminDb.collection('googleIndexingLogs')
-      .where('status', '==', 'success')
-      .get();
+    const logsRows = await queryDb<any[]>(
+      "SELECT data FROM generic_collections WHERE collection_name = 'googleIndexingLogs'"
+    ).catch(() => []);
 
     const indexedUrls = new Set<string>();
-    logsSnapshot.forEach(doc => {
-      indexedUrls.add(doc.data().url);
+    logsRows.forEach(row => {
+      try {
+        const data = JSON.parse(row.data);
+        if (data.status === 'success' && data.url) {
+          indexedUrls.add(data.url);
+        }
+      } catch (e) {}
     });
 
-    // 4. Filter pending URLs
     const pendingUrls = sitemapUrls.filter(url => !indexedUrls.has(url));
     console.log(`[Google Indexing Cron] Total sitemap URLs: ${totalSiteUrls}, Indexed: ${indexedUrls.size}, Pending: ${pendingUrls.length}`);
 
     if (pendingUrls.length === 0) {
-      // Balance pending is 0, turn off cron switch in settings
-      await adminDb.collection('appConfiguration').doc('googleIndexingSettings').set({
-        isCronActive: false,
-        updatedAt: Timestamp.now(),
-      }, { merge: true });
+      const updates = { isCronActive: false, updatedAt: new Date().toISOString() };
+      await queryDb(
+        `INSERT INTO generic_collections (id, collection_name, data) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE data = ?`,
+        ['googleIndexingSettings', 'appConfiguration', JSON.stringify(updates), JSON.stringify(updates)]
+      ).catch(() => {});
       
       console.log("[Google Indexing Cron] No pending URLs left. Cron switch disabled automatically.");
       return NextResponse.json({ success: true, message: "No pending URLs left. Cron disabled automatically." });
     }
 
-    // Daily limit of Google Indexing API is 200 requests. Process at most 180 to leave safety buffer.
     const batchSize = Math.min(pendingUrls.length, 180);
     const urlsToSubmit = pendingUrls.slice(0, batchSize);
 
     console.log(`[Google Indexing Cron] Running batch submission for ${batchSize} URLs...`);
 
-    // Submit in chunks of 10 in parallel
     let successCount = 0;
     const chunkSize = 10;
     for (let i = 0; i < urlsToSubmit.length; i += chunkSize) {
@@ -74,12 +81,12 @@ export async function GET(req: NextRequest) {
     const remainingCount = pendingUrls.length - batchSize;
     console.log(`[Google Indexing Cron] Batch finished. Successfully processed ${successCount} / ${batchSize}. Remaining: ${remainingCount}`);
 
-    // If no remaining URLs left after this run, automatically disable the cron switch
     if (remainingCount === 0) {
-      await adminDb.collection('appConfiguration').doc('googleIndexingSettings').set({
-        isCronActive: false,
-        updatedAt: Timestamp.now(),
-      }, { merge: true });
+      const updates = { isCronActive: false, updatedAt: new Date().toISOString() };
+      await queryDb(
+        `INSERT INTO generic_collections (id, collection_name, data) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE data = ?`,
+        ['googleIndexingSettings', 'appConfiguration', JSON.stringify(updates), JSON.stringify(updates)]
+      ).catch(() => {});
       console.log("[Google Indexing Cron] All pending URLs successfully processed. Cron disabled automatically.");
     }
 

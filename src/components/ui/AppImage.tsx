@@ -118,6 +118,13 @@ export default function AppImage({
     }
   }, [src]);
 
+  const isLocalUpload = typeof imageSrc === 'string' && (
+    imageSrc.startsWith('/uploads/') || 
+    imageSrc.startsWith('blob:') || 
+    imageSrc.startsWith('data:')
+  );
+  const effectiveUnoptimized = unoptimized || isLocalUpload;
+
   return (
     <div className={cn("relative overflow-hidden", fill ? "w-full h-full" : "inline-block", className)}>
 
@@ -161,7 +168,7 @@ export default function AppImage({
         onLoad={handleLoad}
         onError={handleOnError}
         data-ai-hint={aiHint || aiHintData}
-        unoptimized={unoptimized}
+        unoptimized={effectiveUnoptimized}
         className={cn(
           "transition-opacity duration-300 ease-in-out",
           isDefaultImage 

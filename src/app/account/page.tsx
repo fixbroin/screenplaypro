@@ -1,9 +1,10 @@
 "use client";
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-  User,  Bell, MessageSquare, LogOut, ChevronRight, Handshake,
+  User, Bell, MessageSquare, LogOut, ChevronRight, Handshake,
   Loader2, Info, FileText, Construction, UserPlus, CreditCard, PhoneCall
 } from 'lucide-react';
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
@@ -13,9 +14,6 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useLoading } from '@/contexts/LoadingContext';
 import { useUnreadNotificationsCount } from '@/hooks/useUnreadNotificationsCount';
 import type { ReferralSettings } from '@/types/firestore';
-import { doc, onSnapshot } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
-import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 
 import ThemeToggle from '@/components/shared/ThemeToggle';
@@ -42,17 +40,17 @@ function AccountPageContent() {
   const { featuresConfig, isLoading: isLoadingFeaturesConfig } = useFeaturesConfig();
   const { settings: globalSettings, isLoading: isLoadingGlobalSettings } = useGlobalSettings();
 
-
   useEffect(() => {
-    const settingsDocRef = doc(db, "appConfiguration", "referral");
-    const unsubscribe = onSnapshot(settingsDocRef, (docSnap) => {
-        if (docSnap.exists()) {
-            setReferralSettings(docSnap.data() as ReferralSettings);
+    fetch('/api/db/settings?key=referral')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && data.data) {
+          setReferralSettings(data.data as ReferralSettings);
         } else {
-            setReferralSettings(null);
+          setReferralSettings(null);
         }
-    });
-    return () => unsubscribe();
+      })
+      .catch(() => setReferralSettings(null));
   }, []);
 
   const handleNav = (e: React.MouseEvent, href: string) => {
@@ -73,138 +71,100 @@ function AccountPageContent() {
     const content = (
       <div
         className={cn(
-          "flex items-center w-full p-4 rounded-xl border border-border/50 bg-background shadow-sm transition-all duration-300 mb-3 group",
-          isLogout 
-            ? "hover:bg-destructive hover:text-white hover:border-destructive" 
-            : "hover:bg-primary hover:text-primary-foreground hover:border-primary hover:shadow-md"
+          "flex items-center justify-between p-4 rounded-xl transition-all duration-200 cursor-pointer",
+          isLogout
+            ? "bg-red-50 dark:bg-red-950/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-950/40"
+            : "bg-card hover:bg-accent border border-border/50 shadow-sm hover:shadow"
         )}
       >
-        <div className={cn(
-          "p-2 rounded-lg mr-4 transition-colors duration-300",
-          isLogout 
-            ? "bg-destructive/10 text-destructive group-hover:bg-white/20 group-hover:text-white" 
-            : "bg-primary/10 text-primary group-hover:bg-white/20 group-hover:text-white"
-        )}>
-          <Icon className="h-5 w-5" />
-        </div>
-        <span className="flex-grow text-base font-semibold">{label}</span>
-        {badgeCount !== undefined && badgeCount > 0 && (
-          <span className={cn(
-            "flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold mr-2",
-            isLogout ? "bg-white text-destructive" : "bg-red-600 text-white shadow-sm"
+        <div className="flex items-center gap-3">
+          <div className={cn(
+            "p-2 rounded-lg",
+            isLogout ? "bg-red-100 dark:bg-red-900/40" : "bg-muted"
           )}>
-             {badgeCount > 9 ? '9+' : badgeCount}
-          </span>
-        )}
-        <ChevronRight className="h-5 w-5 opacity-50 group-hover:opacity-100 transition-opacity" />
+            <Icon className="w-5 h-5" />
+          </div>
+          <span className="font-medium text-sm">{label}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          {badgeCount !== undefined && badgeCount > 0 && (
+            <span className="px-2 py-0.5 text-xs font-semibold bg-primary text-primary-foreground rounded-full">
+              {badgeCount}
+            </span>
+          )}
+          <ChevronRight className="w-4 h-4 text-muted-foreground" />
+        </div>
       </div>
     );
-  
-    if (isLogout) {
-      return <button onClick={action} className="w-full text-left">{content}</button>;
-    }
-  
-    return (
-      <Link href={href} onClick={action} className="block">
-        {content}
-      </Link>
+
+    return action ? (
+      <div onClick={action}>{content}</div>
+    ) : (
+      <Link href={href}>{content}</Link>
     );
   };
 
-  const accountMenuItems = [
-    { href: '/profile', label: 'Profile Settings', icon: User },
-    { href: '/script-writing', label: 'My Screenplays', icon: FileText },
-    { href: '/subscriptions', label: 'Screenplay Pro Subscriptions', icon: CreditCard },
-    { href: '/notifications', label: 'Notifications', icon: Bell, badgeCount: unreadNotificationsCount },
-    { href: '/chat', label: 'Chat with Support', icon: MessageSquare, isProtected: true, condition: () => !isLoadingGlobalSettings && !!globalSettings?.isChatEnabled },
-  ];
+  const isInitialLoading = authIsLoading || isLoadingAppConfig || isLoadingFeaturesConfig || isLoadingGlobalSettings;
 
-  const extraPagesItems = [
-    { href: '/about-us', label: 'About Us', icon: Info },
-    { href: '/contact-us', label: 'Contact Us', icon: MessageSquare },
-  ];
-
-  const policyItems = [
-     { href: '/terms-and-conditions', label: 'Terms and Conditions', icon: FileText },
-     { href: '/privacy-policy', label: 'Privacy Policy', icon: FileText },
-     { href: '/cancellation-policy', label: 'Cancellation Policy', icon: FileText },
-     
-  ];
-
-  if (authIsLoading || !user || !firestoreUser || isLoadingGlobalSettings) {
+  if (isInitialLoading) {
     return (
-        <div className="flex justify-center items-center h-[calc(100vh-8rem)]">
-            <Loader2 className="h-10 w-10 animate-spin text-primary" />
-        </div>
-    )
+      <div className="flex justify-center items-center min-h-[60vh]">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
   }
 
+  const displayName = firestoreUser?.displayName || user?.displayName || user?.email?.split('@')[0] || 'User';
+  const email = firestoreUser?.email || user?.email || '';
+
   return (
-    <div className="container mx-auto px-2 py-4 sm:px-4 sm:py-6">
-      <div className="flex items-center gap-4 p-4 mb-4">
-        <Avatar className="h-16 w-16 border-2 border-primary">
-          <AvatarImage src={user.photoURL || undefined} alt={firestoreUser.displayName || "User"} />
-          <AvatarFallback className="text-2xl">
-            {firestoreUser.displayName ? firestoreUser.displayName.charAt(0).toUpperCase() : user.email ? user.email.charAt(0).toUpperCase() : "U"}
-          </AvatarFallback>
-        </Avatar>
-        <div>
-          <h1 className="text-xl font-bold">{firestoreUser.displayName || "Valued User"}</h1>
-          <p className="text-sm text-muted-foreground">{firestoreUser.email}</p>
+    <div className="container max-w-2xl mx-auto px-4 py-8 space-y-6">
+      <div className="bg-card border border-border/50 rounded-2xl p-6 shadow-sm">
+        <div className="flex items-center gap-4">
+          <Avatar className="w-16 h-16 border-2 border-primary/20">
+            <AvatarImage src={user?.photoURL || undefined} />
+            <AvatarFallback className="text-xl font-bold bg-primary/10 text-primary">
+              {displayName.charAt(0).toUpperCase()}
+            </AvatarFallback>
+          </Avatar>
+          <div className="space-y-1">
+            <h1 className="text-xl font-bold">{displayName}</h1>
+            <p className="text-sm text-muted-foreground">{email}</p>
+          </div>
         </div>
       </div>
-      
-      <nav className="space-y-6">
-        {/* Section 1: Theme Toggle */}
-        <div className="bg-background border border-border/50 rounded-xl p-4 flex items-center justify-between shadow-sm">
-            <div className="flex items-center">
-              <div className="bg-muted p-2 rounded-lg mr-4">
-                <Info className="h-5 w-5 text-muted-foreground" />
-              </div>
-              <span className="text-base font-semibold">Theme Appearance</span>
-            </div>
-            <ThemeToggle />
+
+      <div className="space-y-3">
+        <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1">
+          Account Settings
+        </h2>
+        <AccountLink href="/profile" icon={User} label="Edit Profile" />
+        <AccountLink href="/subscriptions" icon={CreditCard} label="Subscription Plans" />
+        <AccountLink href="/notifications" icon={Bell} label="Notifications" badgeCount={unreadNotificationsCount} />
+        <AccountLink href="/chat" icon={MessageSquare} label="Support Chat" />
+      </div>
+
+      <div className="space-y-3">
+        <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1">
+          Preferences
+        </h2>
+        <div className="flex items-center justify-between p-4 bg-card rounded-xl border border-border/50 shadow-sm">
+          <span className="font-medium text-sm">Dark Mode</span>
+          <ThemeToggle />
         </div>
-        
-        {/* Section 2: Account & Bookings */}
-        <div className="space-y-1">
-          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider ml-4 mb-2">My Account</h3>
-          {accountMenuItems.filter(item => item.condition ? item.condition() : true).map(item => (
-            <AccountLink key={item.href} {...item} />
-          ))}
-        </div>
-        
-        {/* Section 3: Extra Pages */}
-        <div className="space-y-1">
-          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider ml-4 mb-2">More</h3>
-          {extraPagesItems.map(item => (
-            <AccountLink key={item.href} {...item} />
-          ))}
-        </div>
-        
-        {/* Section 4: Policies */}
-        <div className="space-y-1">
-          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider ml-4 mb-2">Legal</h3>
-          {policyItems.map(item => (
-            <AccountLink key={item.href} {...item} />
-          ))}
-        </div>
-        
-        {/* Section 5: Logout */}
-        <div className="pt-2">
-          <AccountLink href="#" label="Log Out" icon={LogOut} isLogout={true} />
-        </div>
-      </nav>
+      </div>
+
+      <div className="pt-2">
+        <AccountLink href="#" icon={LogOut} label="Log Out" isLogout />
+      </div>
     </div>
   );
 }
 
-
 export default function AccountPage() {
-    return (
-        <ProtectedRoute>
-            <AccountPageContent />
-        </ProtectedRoute>
-    );
+  return (
+    <ProtectedRoute>
+      <AccountPageContent />
+    </ProtectedRoute>
+  );
 }
-

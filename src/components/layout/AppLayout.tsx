@@ -1,4 +1,3 @@
-
 "use client";
 
 import Header from './Header';
@@ -11,8 +10,6 @@ import GlobalAdminPopup from '@/components/chat/GlobalAdminPopup';
 import ReviewSubmissionModal from '@/components/reviews/ReviewSubmissionModal';
 import type { FirestoreBooking } from '@/types/firestore';
 import { useAuth } from '@/hooks/useAuth';
-import { db } from '@/lib/firebase';
-import { collection, query, where, getDocs, limit, doc, updateDoc, Timestamp, serverTimestamp } from 'firebase/firestore';
 import BottomNavigationBar from './BottomNavigationBar';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
@@ -35,38 +32,32 @@ const AppLayout: React.FC<PropsWithChildren> = ({ children }) => {
 
   const isMobile = useIsMobile();
   
-  // --- Inactivity Tracker Logic (UPDATED) ---
   const lastActivityTimeRef = useRef<number>(Date.now());
   const lastDbUpdateTimeRef = useRef<number>(Date.now());
   const inactivityTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const THROTTLE_UPDATE_MS = 2 * 60 * 1000;    // update max every 2 mins when active
-  const INACTIVITY_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes inactivity triggers final update
+  const THROTTLE_UPDATE_MS = 2 * 60 * 1000;
+  const INACTIVITY_THRESHOLD_MS = 5 * 60 * 1000;
 
-  // Firestore update OR sendBeacon fallback
   const updateUserLastSeen = useCallback(
-    async (useBeaconFallback = false) => {
+    async () => {
       if (!user) return;
 
       try {
-        // 1) sendBeacon first if closing tab or hidden
-        if (useBeaconFallback && navigator.sendBeacon) {
-          const payload = JSON.stringify({ uid: user.uid, ts: Date.now() });
+        const payload = JSON.stringify({ uid: user.uid, ts: Date.now() });
+        if (navigator.sendBeacon) {
           navigator.sendBeacon(
             "/api/mark-last-seen", 
             new Blob([payload], { type: "application/json" })
           );
-          lastDbUpdateTimeRef.current = Date.now();
-          console.log("sendBeacon lastSeen:", new Date().toISOString());
-          return;
+        } else {
+          fetch("/api/mark-last-seen", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: payload,
+          }).catch(() => {});
         }
-
-        // 2) fallback to Firestore update
-        const userDocRef = doc(db, "users", user.uid);
-        await updateDoc(userDocRef, { lastLoginAt: serverTimestamp() });
-
         lastDbUpdateTimeRef.current = Date.now();
-        console.log("Firestore lastSeen:", new Date().toISOString());
       } catch (err) {
         console.error("Error updating last seen:", err);
       }
@@ -74,24 +65,20 @@ const AppLayout: React.FC<PropsWithChildren> = ({ children }) => {
     [user]
   );
 
-  // Schedule 5-minute final inactivity timeout
   const scheduleInactivityTimeout = useCallback(() => {
     if (inactivityTimeoutRef.current) {
       clearTimeout(inactivityTimeoutRef.current);
     }
 
     inactivityTimeoutRef.current = setTimeout(() => {
-      console.log("Inactive for 5 mins → final update");
-      updateUserLastSeen(); // final Firestore write
+      updateUserLastSeen();
       inactivityTimeoutRef.current = null;
     }, INACTIVITY_THRESHOLD_MS);
   }, [updateUserLastSeen]);
 
-  // Reset tracker when user is active
   const resetInactivity = useCallback(() => {
     lastActivityTimeRef.current = Date.now();
 
-    // Throttled update (only every 2 minutes)
     if (Date.now() - lastDbUpdateTimeRef.current > THROTTLE_UPDATE_MS) {
       updateUserLastSeen();
     }
@@ -99,8 +86,6 @@ const AppLayout: React.FC<PropsWithChildren> = ({ children }) => {
     scheduleInactivityTimeout();
   }, [scheduleInactivityTimeout, updateUserLastSeen]);
 
-
-  // MAIN EFFECT – installs listeners + unload handlers
   useEffect(() => {
     if (!user || typeof window === "undefined") return;
 
@@ -119,20 +104,18 @@ const AppLayout: React.FC<PropsWithChildren> = ({ children }) => {
       if (document.visibilityState === "visible") {
         resetInactivity();
       } else {
-        // tab hidden → update immediately
-        updateUserLastSeen(true);
+        updateUserLastSeen();
       }
     };
 
     const onPageHide = () => {
-      updateUserLastSeen(true);
+      updateUserLastSeen();
     };
 
     const onBeforeUnload = () => {
-      updateUserLastSeen(true);
+      updateUserLastSeen();
     };
 
-    // Add listeners
     activityEvents.forEach((ev) =>
       window.addEventListener(ev, onActivity, { passive: true })
     );
@@ -140,7 +123,6 @@ const AppLayout: React.FC<PropsWithChildren> = ({ children }) => {
     window.addEventListener("pagehide", onPageHide);
     window.addEventListener("beforeunload", onBeforeUnload);
 
-    // Start tracking immediately
     resetInactivity();
 
     return () => {
@@ -157,19 +139,15 @@ const AppLayout: React.FC<PropsWithChildren> = ({ children }) => {
     };
   }, [user, resetInactivity, updateUserLastSeen]);
 
-
-  // On route change, count as activity
   useEffect(() => {
     if (user) resetInactivity();
   }, [pathname, user, resetInactivity]);
-
 
   useEffect(() => {
     setIsClientMounted(true); 
     const preventRightClick = (e: MouseEvent) => e.preventDefault();
     document.addEventListener('contextmenu', preventRightClick);
 
-    // --- SERVICE WORKER REGISTRATION & STALE SW PURGE ---
     if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
       window.addEventListener('load', function() {
         navigator.serviceWorker.getRegistrations().then((registrations) => {
@@ -189,12 +167,10 @@ const AppLayout: React.FC<PropsWithChildren> = ({ children }) => {
         });
       });
     }
-    // --- END SERVICE WORKER REGISTRATION ---
 
     return () => document.removeEventListener('contextmenu', preventRightClick);
   }, []);
 
-  // Global helper to scroll focused input elements into view when mobile keyboard pops up
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
@@ -302,31 +278,25 @@ const AppLayout: React.FC<PropsWithChildren> = ({ children }) => {
   const fetchPendingReview = useCallback(async () => {
     if (user && !authIsLoading && !pendingReviewBooking && !isReviewPopupOpen) {
       try {
-        const bookingsRef = collection(db, "bookings");
-        const q = query(
-          bookingsRef,
-          where("userId", "==", user.uid),
-          where("status", "==", "Completed"),
-          where("isReviewedByCustomer", "==", false),
-          limit(1)
-        );
-        const querySnapshot = await getDocs(q);
-        if (!querySnapshot.empty) {
-          const bookingToReview = { id: querySnapshot.docs[0].id, ...querySnapshot.docs[0].data() } as FirestoreBooking;
-          console.log("Pending review found for booking:", bookingToReview.bookingId);
-          setPendingReviewBooking(bookingToReview);
-          setIsReviewPopupOpen(true);
-        } else {
-          console.log("No pending reviews found for user:", user.uid);
-          setPendingReviewBooking(null);
-          setIsReviewPopupOpen(false);
+        const res = await fetch('/api/db/collections?name=bookings');
+        const data = await res.json();
+        if (data.success && Array.isArray(data.data)) {
+          const bookingToReview = data.data.find(
+            (b: any) => b.userId === user.uid && b.status === 'Completed' && !b.isReviewedByCustomer
+          );
+          if (bookingToReview) {
+            setPendingReviewBooking(bookingToReview as FirestoreBooking);
+            setIsReviewPopupOpen(true);
+            return;
+          }
         }
+        setPendingReviewBooking(null);
+        setIsReviewPopupOpen(false);
       } catch (error) {
         console.error("Error fetching pending reviews:", error);
       }
     }
   }, [user, authIsLoading, pendingReviewBooking, isReviewPopupOpen]);
-
 
   useEffect(() => {
     if (isClientMounted && user && !authIsLoading) {
@@ -377,15 +347,13 @@ const AppLayout: React.FC<PropsWithChildren> = ({ children }) => {
             <Header />
         </div>
       )}
-     <main
-  className={cn(
-    "flex-grow",
-    shouldShowBottomNav && "pb-16",
-    shouldShowHeader && "pt-[64px]"
-  )}
->
-
-
+      <main
+        className={cn(
+          "flex-grow",
+          shouldShowBottomNav && "pb-16",
+          shouldShowHeader && "pt-[64px]"
+        )}
+      >
         {children}
       </main>
       {showFooter && <Footer />}
@@ -414,4 +382,3 @@ const AppLayout: React.FC<PropsWithChildren> = ({ children }) => {
 };
 
 export default AppLayout;
-

@@ -14,8 +14,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { updateProfile as updateAuthProfile } from "firebase/auth"; 
-import { auth, db, storage } from '@/lib/firebase';
-import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
+import { auth } from '@/lib/firebase';
 import { uploadLocalImage, deleteLocalImage } from '@/lib/fileUploadUtils';
 import { useToast } from '@/hooks/use-toast';
 import { Progress } from '@/components/ui/progress';
@@ -65,10 +64,10 @@ export default function AdminProfilePage() {
     setImagePreview(adminUser.photoURL || null);
 
     try {
-      const userDocRef = doc(db, "users", adminUser.uid);
-      const docSnap = await getDoc(userDocRef);
-      if (docSnap.exists() && docSnap.data().mobileNumber) {
-        form.setValue('mobileNumber', docSnap.data().mobileNumber);
+      const res = await fetch(`/api/db/collections?name=users&id=${adminUser.uid}`);
+      const json = await res.json();
+      if (json.success && json.data && json.data.mobileNumber) {
+        form.setValue('mobileNumber', json.data.mobileNumber);
       }
     } catch (error) {
       console.error("Error fetching admin mobile number:", error);
@@ -149,19 +148,25 @@ export default function AdminProfilePage() {
     }
     
     try {
-      const userDocRef = doc(db, "users", user.uid);
-      await setDoc(userDocRef, {
+      const fullUserData = {
+        id: user.uid,
+        uid: user.uid,
         displayName: data.displayName,
         mobileNumber: data.mobileNumber || null,
         photoURL: newPhotoURL || null, 
         email: user.email, 
-        uid: user.uid,
-      }, { merge: true });
+        updatedAt: new Date().toISOString(),
+      };
+      await fetch('/api/db/collections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ collectionName: 'users', id: user.uid, data: fullUserData })
+      });
 
-      toast({ title: "Profile Updated", description: "Your admin profile has been successfully updated." });
-    } catch (firestoreError) {
-      console.error("Error updating Firestore document:", firestoreError);
-      toast({ title: "Firestore Update Failed", description: (firestoreError as Error).message || "Could not save all profile details to database.", variant: "destructive" });
+      toast({ title: "Profile Updated", description: "Your admin profile has been successfully updated in MySQL." });
+    } catch (dbError) {
+      console.error("Error updating MySQL user record:", dbError);
+      toast({ title: "Update Failed", description: (dbError as Error).message || "Could not save profile details to database.", variant: "destructive" });
     } finally {
       setIsSavingProfile(false); 
     }

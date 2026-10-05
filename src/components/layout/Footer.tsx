@@ -5,14 +5,12 @@ import Link from 'next/link';
 import Logo from '@/components/shared/Logo';
 import { Facebook, Twitter, Instagram, Linkedin, Youtube, Phone, MapPin, Mail, ArrowRight, Loader2 } from 'lucide-react';
 import { useGlobalSettings } from '@/hooks/useGlobalSettings'; 
-import { Skeleton } from '@/components/ui/skeleton'; 
-import { db } from '@/lib/firebase';
-import { collection, getDocs, orderBy, query, limit as firestoreLimit, addDoc, Timestamp, where, limit } from 'firebase/firestore';
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter, usePathname } from 'next/navigation';
 import { useLoading } from '@/contexts/LoadingContext'; 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { ADMIN_EMAIL } from '@/contexts/AuthContext';
 import { triggerPushNotification } from '@/lib/fcmUtils';
@@ -83,42 +81,23 @@ const Footer = () => {
 
     setIsSubscribing(true);
     try {
-      const docRef = await addDoc(collection(db, "popupSubmissions"), {
-        popupName: "Footer Newsletter",
-        popupType: "subscribe",
-        email: subscribeEmail,
-        submittedAt: Timestamp.now(),
-        status: "new",
-        source: "subscribe_popup",
+      const docId = `sub_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      await fetch('/api/db/collections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          collectionName: "popupSubmissions",
+          id: docId,
+          data: {
+            popupName: "Footer Newsletter",
+            popupType: "subscribe",
+            email: subscribeEmail,
+            submittedAt: new Date().toISOString(),
+            status: "new",
+            source: "subscribe_popup",
+          }
+        })
       });
-
-      // --- ADMIN NOTIFICATION FOR NEWSLETTER ---
-      try {
-        const adminQuery = query(collection(db, "users"), where("email", "==", ADMIN_EMAIL), limit(1));
-        const adminSnapshot = await getDocs(adminQuery);
-        if (!adminSnapshot.empty) {
-          const adminId = adminSnapshot.docs[0].id;
-          const adminNotification: Omit<FirestoreNotification, 'id'> = {
-            userId: adminId,
-            title: "New Newsletter Subscriber",
-            message: `Email: ${subscribeEmail} (from Footer)`,
-            type: "info",
-            href: `/admin/inquiries`,
-            read: false,
-            createdAt: Timestamp.now(),
-          };
-          await addDoc(collection(db, "userNotifications"), adminNotification);
-          triggerPushNotification({
-            userId: adminId,
-            title: adminNotification.title,
-            body: adminNotification.message,
-            href: adminNotification.href
-          }).catch(err => console.error("Error sending admin newsletter push:", err));
-        }
-      } catch (notifyErr) {
-        console.error("Error sending admin newsletter notifications:", notifyErr);
-      }
-      // --- END ADMIN NOTIFICATION ---
 
       toast({ 
         title: "Subscribed!", 

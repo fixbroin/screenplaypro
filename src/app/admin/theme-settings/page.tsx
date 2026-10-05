@@ -8,8 +8,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Palette, Save, Loader2, RefreshCw, XCircle, Sun, Moon, Sparkles, CheckCircle2, Layout, Zap, Component, Settings2 } from "lucide-react";
 import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase';
-import { doc, getDoc, setDoc, Timestamp } from "firebase/firestore";
 import type { GlobalWebSettings, ThemeColors, ThemePalette, LoaderType } from '@/types/firestore';
 import { triggerRefresh } from '@/lib/revalidateUtils';
 import { hexToHslString, hslStringToHex, DEFAULT_LIGHT_THEME_COLORS_HSL, DEFAULT_DARK_THEME_COLORS_HSL, CORE_THEME_PALETTE_KEYS } from '@/lib/colorUtils';
@@ -17,9 +15,6 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
-
-const WEB_SETTINGS_DOC_ID = "global";
-const WEB_SETTINGS_COLLECTION = "webSettings";
 
 const loaderTypes: LoaderType[] = ["logo-pulse", "pulse", "typing", "bars", "gradient", "orbit", "dots", "progress", "cube", "shine", "bounce", "ring", "flip", "wave", "heart", "matrix"];
 
@@ -64,10 +59,14 @@ export default function ThemeSettingsPage() {
   const loadThemeSettings = useCallback(async () => {
     setIsLoading(true);
     try {
-      const settingsDocRef = doc(db, WEB_SETTINGS_COLLECTION, WEB_SETTINGS_DOC_ID);
-      const docSnap = await getDoc(settingsDocRef);
-      if (docSnap.exists()) {
-        const globalSettings = docSnap.data() as GlobalWebSettings;
+      const res = await fetch('/api/db/web-settings');
+      const json = await res.json();
+      let globalSettings: GlobalWebSettings = {};
+      if (json.success && json.settings && Object.keys(json.settings).length > 0) {
+        globalSettings = json.settings;
+      }
+
+      if (Object.keys(globalSettings).length > 0) {
         setSelectedLoader(globalSettings.loaderType || 'logo-pulse');
         const loadedLightHexColors: Record<string, string> = {};
         const loadedDarkHexColors: Record<string, string> = {};
@@ -138,14 +137,26 @@ export default function ThemeSettingsPage() {
         if (currentColorsHex.dark[key]) themeColorsToSave.dark![key] = hexToHslString(currentColorsHex.dark[key]);
       });
 
-      const settingsDocRef = doc(db, WEB_SETTINGS_COLLECTION, WEB_SETTINGS_DOC_ID);
-      await setDoc(settingsDocRef, { themeColors: themeColorsToSave, loaderType: selectedLoader, updatedAt: Timestamp.now() }, { merge: true });
+      const res = await fetch('/api/db/web-settings');
+      const json = await res.json();
+      const existingSettings = json.settings || {};
+      const updatedSettings = {
+        ...existingSettings,
+        themeColors: themeColorsToSave,
+        loaderType: selectedLoader,
+        updatedAt: new Date().toISOString(),
+      };
+
+      await fetch('/api/db/web-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedSettings)
+      });
       
-      // Trigger SmartSync Revalidation
       await triggerRefresh('global');
       await triggerRefresh('global-cache');
       
-      toast({ title: "Theme Updated", description: "Your brand colors and loader have been synchronized." });
+      toast({ title: "Theme Updated", description: "Your brand colors and loader have been synchronized to MySQL." });
     } catch (error) {
       toast({ title: "Save Failed", variant: "destructive" });
     } finally {
@@ -156,12 +167,16 @@ export default function ThemeSettingsPage() {
   const handleResetAllToDefault = async () => {
     setIsSaving(true);
     try {
-      const settingsDocRef = doc(db, WEB_SETTINGS_COLLECTION, WEB_SETTINGS_DOC_ID);
-      await setDoc(settingsDocRef, {
+      const updatedSettings = {
         themeColors: { light: { ...DEFAULT_LIGHT_THEME_COLORS_HSL }, dark: { ...DEFAULT_DARK_THEME_COLORS_HSL } },
         loaderType: 'logo-pulse',
-        updatedAt: Timestamp.now(),
-      }, { merge: true });
+        updatedAt: new Date().toISOString(),
+      };
+      await fetch('/api/db/web-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedSettings)
+      });
 
       // Trigger SmartSync Revalidation
       await triggerRefresh('global');

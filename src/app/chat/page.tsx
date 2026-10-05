@@ -10,8 +10,6 @@ import type { BreadcrumbItem } from "@/types/ui";
 import { Button } from "@/components/ui/button";
 import { Home as HomeIcon, ArrowLeft } from "lucide-react";
 import { useLoading } from '@/contexts/LoadingContext';
-import { db } from '@/lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
 
 export default function FullPageChat() {
   const router = useRouter();
@@ -23,9 +21,14 @@ export default function FullPageChat() {
   useEffect(() => {
     const fetchOtherUser = async () => {
       if (withUserId) {
-        const userDoc = await getDoc(doc(db, "users", withUserId));
-        if (userDoc.exists()) {
-          setOtherUserName(userDoc.data().displayName || "User");
+        try {
+          const res = await fetch(`/api/db/users?id=${withUserId}`);
+          const json = await res.json();
+          if (json.success && json.user) {
+            setOtherUserName(json.user.displayName || json.user.name || "User");
+          }
+        } catch (err) {
+          console.error("Error fetching user from MySQL:", err);
         }
       }
     };

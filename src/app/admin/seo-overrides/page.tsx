@@ -10,8 +10,6 @@ import { Switch } from "@/components/ui/switch";
 import { PlusCircle, Edit, Trash2, Loader2, CheckCircle, XCircle, Zap, PackageSearch, Compass, AlertTriangle, ExternalLink, Copy } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { CityCategorySeoSetting, AreaCategorySeoSetting, FirestoreCategory, FirestoreCity, FirestoreArea } from '@/types/firestore';
-import { db } from '@/lib/firebase';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, orderBy, query, Timestamp, where, writeBatch, limit, getCountFromServer } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Skeleton } from '@/components/ui/skeleton';
@@ -70,67 +68,58 @@ export default function SeoOverridesPage() {
   const handleLoadMoreAreas = () => setAreasLimit(prev => prev ? prev + 100 : 100);
   const handleLoadAllAreas = () => setAreasLimit(null);
 
-  const cityCatSeoRef = collection(db, "cityCategorySeoSettings");
-  const areaCatSeoRef = collection(db, "areaCategorySeoSettings");
-  const citiesRef = collection(db, "cities");
-
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const citiesQuery = citiesLimit ? query(citiesRef, limit(citiesLimit)) : citiesRef;
-      const areasQuery = areasLimit ? query(collection(db, "areas"), limit(areasLimit)) : collection(db, "areas");
-      const cityCategoryQuery = cityCategoryLimit ? query(cityCatSeoRef, limit(cityCategoryLimit)) : cityCatSeoRef;
-      const areaCategoryQuery = areaCategoryLimit ? query(areaCatSeoRef, limit(areaCategoryLimit)) : areaCatSeoRef;
-
       const [
-        catSnap, citySnap, areaSnap, cityCatSeoSnap, areaCatSeoSnap,
-        cityCountSnap, areaCountSnap, cityCatCountSnap, areaCatCountSnap
+        catRes, cityRes, areaRes, cityCatRes, areaCatRes
       ] = await Promise.all([
-        getDocs(collection(db, "adminCategories")),
-        getDocs(citiesQuery),
-        getDocs(areasQuery),
-        getDocs(cityCategoryQuery),
-        getDocs(areaCategoryQuery),
-        getCountFromServer(citiesRef),
-        getCountFromServer(collection(db, "areas")),
-        getCountFromServer(cityCatSeoRef),
-        getCountFromServer(areaCatSeoRef),
+        fetch('/api/db/collections?name=adminCategories'),
+        fetch('/api/db/collections?name=cities'),
+        fetch('/api/db/collections?name=areas'),
+        fetch('/api/db/collections?name=cityCategorySeoSettings'),
+        fetch('/api/db/collections?name=areaCategorySeoSettings')
       ]);
 
-      setTotalCities(cityCountSnap.data().count);
-      setTotalAreas(areaCountSnap.data().count);
-      setTotalCityCategories(cityCatCountSnap.data().count);
-      setTotalAreaCategories(areaCatCountSnap.data().count);
+      const [
+        catJson, cityJson, areaJson, cityCatJson, areaCatJson
+      ] = await Promise.all([
+        catRes.json(), cityRes.json(), areaRes.json(), cityCatRes.json(), areaCatRes.json()
+      ]);
 
-      const fetchedCategories = catSnap.docs.map(d => ({ ...d.data(), id: d.id } as FirestoreCategory));
-      fetchedCategories.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+      const fetchedCategories = (catJson.success && Array.isArray(catJson.data)) ? catJson.data : [];
+      fetchedCategories.sort((a: any, b: any) => (a.name || '').localeCompare(b.name || ''));
       setCategories(fetchedCategories);
 
-      const fetchedCities = citySnap.docs.map(d => ({ ...d.data(), id: d.id } as FirestoreCity));
-      fetchedCities.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-      setCities(fetchedCities);
+      const allCities = (cityJson.success && Array.isArray(cityJson.data)) ? cityJson.data : [];
+      allCities.sort((a: any, b: any) => (a.name || '').localeCompare(b.name || ''));
+      setTotalCities(allCities.length);
+      setCities(citiesLimit ? allCities.slice(0, citiesLimit) : allCities);
 
-      const fetchedAreas = areaSnap.docs.map(d => ({ ...d.data(), id: d.id } as FirestoreArea));
-      fetchedAreas.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-      setAreas(fetchedAreas);
+      const allAreas = (areaJson.success && Array.isArray(areaJson.data)) ? areaJson.data : [];
+      allAreas.sort((a: any, b: any) => (a.name || '').localeCompare(b.name || ''));
+      setTotalAreas(allAreas.length);
+      setAreas(areasLimit ? allAreas.slice(0, areasLimit) : allAreas);
 
-      const fetchedCityCat = cityCatSeoSnap.docs.map(d => ({ ...d.data(), id: d.id } as CityCategorySeoSetting));
-      fetchedCityCat.sort((a, b) => {
+      const allCityCat = (cityCatJson.success && Array.isArray(cityCatJson.data)) ? cityCatJson.data : [];
+      allCityCat.sort((a: any, b: any) => {
         const cityComp = (a.cityName || '').localeCompare(b.cityName || '');
         if (cityComp !== 0) return cityComp;
         return (a.categoryName || '').localeCompare(b.categoryName || '');
       });
-      setCityCategorySettings(fetchedCityCat);
+      setTotalCityCategories(allCityCat.length);
+      setCityCategorySettings(cityCategoryLimit ? allCityCat.slice(0, cityCategoryLimit) : allCityCat);
 
-      const fetchedAreaCat = areaCatSeoSnap.docs.map(d => ({ ...d.data(), id: d.id } as AreaCategorySeoSetting));
-      fetchedAreaCat.sort((a, b) => {
+      const allAreaCat = (areaCatJson.success && Array.isArray(areaCatJson.data)) ? areaCatJson.data : [];
+      allAreaCat.sort((a: any, b: any) => {
         const cityComp = (a.cityName || '').localeCompare(b.cityName || '');
         if (cityComp !== 0) return cityComp;
         const areaComp = (a.areaName || '').localeCompare(b.areaName || '');
         if (areaComp !== 0) return areaComp;
         return (a.categoryName || '').localeCompare(b.categoryName || '');
       });
-      setAreaCategorySettings(fetchedAreaCat);
+      setTotalAreaCategories(allAreaCat.length);
+      setAreaCategorySettings(areaCategoryLimit ? allAreaCat.slice(0, areaCategoryLimit) : allAreaCat);
 
     } catch (error) {
       console.error("Error fetching SEO override data:", error);
@@ -157,15 +146,20 @@ export default function SeoOverridesPage() {
     setIsFormOpen(true);
   };
 
+  const getCollectionName = (type: 'cityCategory' | 'areaCategory' | 'city' | 'area') => {
+    switch (type) {
+      case 'cityCategory': return 'cityCategorySeoSettings';
+      case 'areaCategory': return 'areaCategorySeoSettings';
+      case 'area': return 'areas';
+      case 'city': return 'cities';
+    }
+  };
+
   const handleDeleteSetting = async (id: string, type: 'cityCategory' | 'areaCategory' | 'city' | 'area') => {
     setIsSubmitting(true);
-    const collectionRef = 
-      type === 'cityCategory' ? cityCatSeoRef : 
-      type === 'areaCategory' ? areaCatSeoRef : 
-      type === 'area' ? collection(db, 'areas') : 
-      citiesRef;
+    const collName = getCollectionName(type);
     try {
-      await deleteDoc(doc(collectionRef, id));
+      await fetch(`/api/db/collections?name=${collName}&id=${id}`, { method: 'DELETE' });
       
       await triggerRefresh(type === 'city' ? 'cities' : 'global-cache');
       await triggerRefresh('sitemap');
@@ -181,41 +175,9 @@ export default function SeoOverridesPage() {
 
   const handleDeleteAllSettings = async (type: 'cityCategory' | 'areaCategory' | 'city' | 'area') => {
     setIsSubmitting(true);
+    const collName = getCollectionName(type);
     try {
-      const collectionRef = 
-        type === 'cityCategory' ? cityCatSeoRef : 
-        type === 'areaCategory' ? areaCatSeoRef : 
-        type === 'area' ? collection(db, 'areas') : 
-        citiesRef;
-
-      // Query all documents in the collection to ensure we delete all records, not just the loaded limited page
-      const snap = await getDocs(collectionRef);
-      const allDocs = snap.docs;
-
-      if (allDocs.length === 0) {
-        toast({ title: "No items to delete", description: "There are no SEO settings/records to delete in this tab." });
-        setIsSubmitting(false);
-        return;
-      }
-
-      let batch = writeBatch(db);
-      let count = 0;
-
-      for (const d of allDocs) {
-        batch.delete(d.ref);
-        count++;
-
-        if (count >= 500) {
-          await batch.commit();
-          await new Promise(resolve => setTimeout(resolve, 500)); // Rate limit buffer to prevent Firestore stream exhaustion
-          batch = writeBatch(db);
-          count = 0;
-        }
-      }
-
-      if (count > 0) {
-        await batch.commit();
-      }
+      await fetch(`/api/db/collections?name=${collName}&clearAll=true`, { method: 'DELETE' });
 
       await triggerRefresh(type === 'city' ? 'cities' : 'global-cache');
       await triggerRefresh('sitemap');
@@ -227,7 +189,7 @@ export default function SeoOverridesPage() {
 
       toast({ 
         title: "Success", 
-        description: `Successfully deleted all ${allDocs.length} ${typeLabel} records.` 
+        description: `Successfully deleted all ${typeLabel} records from MySQL.` 
       });
 
       // Reset limits to default
@@ -247,30 +209,33 @@ export default function SeoOverridesPage() {
   
   const handleToggleActive = async (setting: any, type: 'cityCategory' | 'areaCategory' | 'city' | 'area') => {
     setIsSubmitting(true);
-    const collectionRef = 
-      type === 'cityCategory' ? cityCatSeoRef : 
-      type === 'areaCategory' ? areaCatSeoRef : 
-      type === 'area' ? collection(db, 'areas') : 
-      citiesRef;
+    const collName = getCollectionName(type);
     try {
-        await updateDoc(doc(collectionRef, setting.id!), { isActive: !setting.isActive, updatedAt: Timestamp.now() });
-        
-        await triggerRefresh(type === 'city' ? 'cities' : 'global-cache');
-        await triggerRefresh('sitemap');
+      const updatedData = { ...setting, isActive: !setting.isActive, updatedAt: new Date().toISOString() };
+      await fetch('/api/db/collections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ collectionName: collName, id: setting.id, data: updatedData })
+      });
+      
+      await triggerRefresh(type === 'city' ? 'cities' : 'global-cache');
+      await triggerRefresh('sitemap');
 
-        toast({ title: "Success", description: "Status updated."});
-        fetchData();
+      toast({ title: "Success", description: "Status updated."});
+      fetchData();
     } catch (error) {
-        toast({ title: "Error", description: "Could not update status.", variant: "destructive" });
+      toast({ title: "Error", description: "Could not update status.", variant: "destructive" });
     } finally {
-        setIsSubmitting(false);
+      setIsSubmitting(false);
     }
   };
 
   const handleCityFormSubmit = async (data: any) => {
       setIsSubmitting(true);
+      const docId = (data.id && data.id !== 'new') ? data.id : `city_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       try {
           const payload = {
+              id: docId,
               name: data.name,
               slug: data.slug || data.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
               seo_title: data.seo_title,
@@ -278,14 +243,15 @@ export default function SeoOverridesPage() {
               seo_keywords: data.seo_keywords,
               h1_title: data.h1_title,
               isActive: data.isActive,
-              updatedAt: Timestamp.now()
+              updatedAt: new Date().toISOString(),
+              ...(data.id && data.id !== 'new' ? {} : { createdAt: new Date().toISOString() })
           };
 
-          if (data.id && data.id !== 'new') {
-              await updateDoc(doc(citiesRef, data.id), payload);
-          } else {
-              await addDoc(citiesRef, { ...payload, createdAt: Timestamp.now() });
-          }
+          await fetch('/api/db/collections', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ collectionName: 'cities', id: docId, data: payload })
+          });
           
           await triggerRefresh('cities');
           await triggerRefresh('global-cache');
@@ -301,7 +267,7 @@ export default function SeoOverridesPage() {
             });
           }
 
-          toast({ title: "Success", description: "City SEO settings saved." });
+          toast({ title: "Success", description: "City SEO settings saved to MySQL." });
           setIsFormOpen(false); 
           fetchData();
       } catch (e) {
@@ -320,22 +286,24 @@ export default function SeoOverridesPage() {
           return;
       }
       
+      const docId = (data.id && data.id !== 'new') ? data.id : `area_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       try {
           const payload = {
+              id: docId,
               name: data.name,
               cityId: data.cityId,
               cityName: city.name,
               slug: data.slug || data.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
               isActive: data.isActive,
-              updatedAt: Timestamp.now()
+              updatedAt: new Date().toISOString(),
+              ...(data.id && data.id !== 'new' ? {} : { createdAt: new Date().toISOString() })
           };
 
-          const areasRef = collection(db, 'areas');
-          if (data.id && data.id !== 'new') {
-              await updateDoc(doc(areasRef, data.id), payload);
-          } else {
-              await addDoc(areasRef, { ...payload, createdAt: Timestamp.now() });
-          }
+          await fetch('/api/db/collections', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ collectionName: 'areas', id: docId, data: payload })
+          });
           
           await triggerRefresh('global-cache');
           await triggerRefresh('sitemap');
@@ -352,7 +320,7 @@ export default function SeoOverridesPage() {
             });
           }
 
-          toast({ title: "Success", description: "Locality / Area saved successfully." });
+          toast({ title: "Success", description: "Locality / Area saved successfully to MySQL." });
           setIsFormOpen(false); 
           fetchData();
       } catch (e) {
@@ -373,8 +341,9 @@ export default function SeoOverridesPage() {
       return;
     }
     
-    // Prepare the payload for Firestore, excluding the client-side 'id' if it's a new document
-    const basePayload: Omit<CityCategorySeoSetting, 'id' | 'createdAt' | 'updatedAt'> = {
+    const docId = data.id || `citycat_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const basePayload = {
+        id: docId,
         cityId: data.cityId,
         cityName: city.name,
         categoryId: data.categoryId,
@@ -386,21 +355,24 @@ export default function SeoOverridesPage() {
         meta_keywords: data.meta_keywords,
         imageHint: data.imageHint,
         isActive: data.isActive,
+        updatedAt: new Date().toISOString(),
+        ...(data.id ? {} : { createdAt: new Date().toISOString() })
     };
 
     try {
-      if (data.id) { // Editing existing
-        await updateDoc(doc(cityCatSeoRef, data.id), { ...basePayload, updatedAt: Timestamp.now() });
-      } else { // Adding new
-        // Check for duplicates before adding
-        const q = query(cityCatSeoRef, where("cityId", "==", data.cityId), where("categoryId", "==", data.categoryId));
-        const snap = await getDocs(q);
-        if (!snap.empty) {
+      if (!data.id) {
+        const duplicate = cityCategorySettings.find(s => s.cityId === data.cityId && s.categoryId === data.categoryId);
+        if (duplicate) {
            toast({ title: "Duplicate Entry", description: "An SEO override for this city and category already exists.", variant: "destructive"});
            setIsSubmitting(false); return;
         }
-        await addDoc(cityCatSeoRef, { ...basePayload, createdAt: Timestamp.now() });
       }
+
+      await fetch('/api/db/collections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ collectionName: 'cityCategorySeoSettings', id: docId, data: basePayload })
+      });
 
       await triggerRefresh('global-cache');
       await triggerRefresh('sitemap');
@@ -417,7 +389,7 @@ export default function SeoOverridesPage() {
         });
       }
 
-      toast({ title: "Success", description: "City-Category SEO setting saved." });
+      toast({ title: "Success", description: "City-Category SEO setting saved to MySQL." });
       setIsFormOpen(false); fetchData();
     } catch (e) {
       toast({ title: "Error", description: (e as Error).message || "Could not save setting.", variant: "destructive" });
@@ -437,26 +409,32 @@ export default function SeoOverridesPage() {
       return;
     }
     
-    const basePayload: Omit<AreaCategorySeoSetting, 'id' | 'createdAt' | 'updatedAt'> = {
+    const docId = data.id || `areacat_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const basePayload = {
+      id: docId,
       cityId: data.cityId, cityName: city.name, areaId: data.areaId, areaName: area.name,
       categoryId: data.categoryId, categoryName: category.name, 
       slug: data.slug || generateSeoSlug([city.slug, area.slug, category.slug]),
       h1_title: data.h1_title, meta_title: data.meta_title, meta_description: data.meta_description,
       meta_keywords: data.meta_keywords, imageHint: data.imageHint, isActive: data.isActive,
+      updatedAt: new Date().toISOString(),
+      ...(data.id ? {} : { createdAt: new Date().toISOString() })
     };
 
     try {
-      if (data.id) { // Editing existing
-        await updateDoc(doc(areaCatSeoRef, data.id), { ...basePayload, updatedAt: Timestamp.now() });
-      } else { // Adding new
-        const q = query(areaCatSeoRef, where("areaId", "==", data.areaId), where("categoryId", "==", data.categoryId));
-        const snap = await getDocs(q);
-        if (!snap.empty) {
+      if (!data.id) {
+        const duplicate = areaCategorySettings.find(s => s.areaId === data.areaId && s.categoryId === data.categoryId);
+        if (duplicate) {
            toast({ title: "Duplicate Entry", description: "An SEO override for this area and category already exists.", variant: "destructive"});
            setIsSubmitting(false); return;
         }
-        await addDoc(areaCatSeoRef, { ...basePayload, createdAt: Timestamp.now() });
       }
+
+      await fetch('/api/db/collections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ collectionName: 'areaCategorySeoSettings', id: docId, data: basePayload })
+      });
 
       await triggerRefresh('global-cache');
       await triggerRefresh('sitemap');
@@ -474,7 +452,7 @@ export default function SeoOverridesPage() {
         });
       }
 
-      toast({ title: "Success", description: "Area-Category SEO setting saved." });
+      toast({ title: "Success", description: "Area-Category SEO setting saved to MySQL." });
       setIsFormOpen(false); fetchData();
     } catch (e) {
       toast({ title: "Error", description: (e as Error).message || "Could not save setting.", variant: "destructive" });

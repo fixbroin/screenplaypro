@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -9,9 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Users, Eye, Trash2, Loader2, UserCircle, PackageSearch, ShieldCheck, ShieldAlert, XCircle, Search, Download, FileDown, UserCheck, UserX, UserPlus, Phone, Mail, Calendar, MessageCircle, ChevronDown, FileSpreadsheet, FileText as FilePdfIcon, CheckCircle2 } from "lucide-react";
-import type { FirestoreUser, Address, ArtistApplication } from '@/types/firestore';
-import { db } from '@/lib/firebase'; 
-import { collection, query, orderBy, onSnapshot, doc, updateDoc, deleteDoc, Timestamp, limit, startAfter, getDocs, where, type QueryDocumentSnapshot } from "firebase/firestore";
+import type { FirestoreUser, Address } from '@/types/firestore';
 import { useToast } from "@/hooks/use-toast";
 import UserDetailsModal from '@/components/admin/UserDetailsModal'; 
 import { Input } from '@/components/ui/input';
@@ -23,7 +20,6 @@ import 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
-import { getArchivedUsers } from '@/lib/adminDashboardUtils';
 import { triggerRefresh } from '@/lib/revalidateUtils';
 import { useApplicationConfig } from '@/hooks/useApplicationConfig';
 import { sendAccountStatusEmail } from '@/ai/flows/sendAccountStatusEmailFlow';
@@ -51,7 +47,6 @@ type SelectableUserField = keyof Omit<FirestoreUser, 'addresses' | 'fcmTokens' |
 
 const availableFields: { key: SelectableUserField; label: string }[] = [
   { key: 'displayName', label: 'Name' },
-  { key: 'username', label: 'Username' },
   { key: 'email', label: 'Email' },
   { key: 'mobileNumber', label: 'Mobile Number' },
   { key: 'fullAddress', label: 'Primary Address' },
@@ -61,14 +56,9 @@ const availableFields: { key: SelectableUserField; label: string }[] = [
   { key: 'lastLoginAt', label: 'Last Login' },
 ];
 
-const PAGE_SIZE = 20;
-
 export default function AdminUsersPage() {
   const { config: appConfig } = useApplicationConfig();
   const [users, setUsers] = useState<FirestoreUser[]>([]);
-  const [lastDoc, setLastDoc] = useState<QueryDocumentSnapshot | null>(null);
-  const [hasMore, setHasMore] = useState(true);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
@@ -81,112 +71,41 @@ export default function AdminUsersPage() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   const [selectedFields, setSelectedFields] = useState<Partial<Record<SelectableUserField, boolean>>>({
-    displayName: true, username: true, email: true, mobileNumber: true, fullAddress: false, 
+    displayName: true, email: true, mobileNumber: true, fullAddress: false, 
     walletBalance: false, isActive: true, createdAt: false, lastLoginAt: false,
     id: false, uid: false,
   });
 
-  useEffect(() => {
-    if (searchTerm.trim().length > 0) {
-      const delayDebounceFn = setTimeout(async () => {
-        setIsLoading(true);
-        try {
-          const usersRef = collection(db, "users");
-          const term = searchTerm.trim();
-          const lowerTerm = term.toLowerCase();
-          const capitalizedTerm = term.charAt(0).toUpperCase() + term.slice(1);
-          
-          const queries = [
-            query(usersRef, where("email", ">=", term), where("email", "<=", term + '\uf8ff')),
-            query(usersRef, where("email", ">=", lowerTerm), where("email", "<=", lowerTerm + '\uf8ff')),
-            query(usersRef, where("mobileNumber", ">=", term), where("mobileNumber", "<=", term + '\uf8ff')),
-            query(usersRef, where("displayName", ">=", term), where("displayName", "<=", term + '\uf8ff')),
-            query(usersRef, where("displayName", ">=", capitalizedTerm), where("displayName", "<=", capitalizedTerm + '\uf8ff')),
-            query(usersRef, where("username", ">=", lowerTerm), where("username", "<=", lowerTerm + '\uf8ff')),
-          ];
-
-          // Add phone variations with 91 prefix matching
-          if (/^\d+$/.test(term)) {
-            queries.push(query(usersRef, where("mobileNumber", ">=", `91${term}`), where("mobileNumber", "<=", `91${term}` + '\uf8ff')));
-            queries.push(query(usersRef, where("mobileNumber", ">=", `+91${term}`), where("mobileNumber", "<=", `+91${term}` + '\uf8ff')));
-            
-            if (term.startsWith('91') && term.length > 2) {
-              const without91 = term.substring(2);
-              queries.push(query(usersRef, where("mobileNumber", ">=", without91), where("mobileNumber", "<=", without91 + '\uf8ff')));
-            }
-          }
-          
-          const snapShots = await Promise.all(queries.map(q => getDocs(q)));
-          const results: FirestoreUser[] = [];
-          snapShots.forEach(snap => {
-            snap.docs.forEach(docSnap => {
-              results.push({ ...docSnap.data(), id: docSnap.id } as FirestoreUser);
-            });
-          });
-
-          const uniqueResults = Array.from(new Map(results.map(u => [u.id, u])).values());
-          setUsers(uniqueResults);
-          setHasMore(false);
-        } catch (error) {
-          console.error("Search error:", error);
-        } finally {
-          setIsLoading(false);
-        }
-      }, 400);
-      return () => clearTimeout(delayDebounceFn);
-    } else {
-      setIsLoading(true);
-      const usersCollectionRef = collection(db, "users");
-      const q = query(usersCollectionRef, orderBy("createdAt", "desc"), limit(PAGE_SIZE));
-
-      const unsubscribe = onSnapshot(q, (querySnapshot) => {
-        const fetchedUsers = querySnapshot.docs.map(doc => ({
-          ...doc.data(),
-          id: doc.id, 
-        } as FirestoreUser));
-        setUsers(fetchedUsers);
-        setLastDoc(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
-        setHasMore(querySnapshot.docs.length === PAGE_SIZE);
-        setIsLoading(false);
-      }, (error) => {
-        console.error("Error fetching users: ", error);
-        setIsLoading(false);
-      });
-
-      return () => unsubscribe();
-    }
-  }, [searchTerm]);
-
-  const loadMoreUsers = async () => {
-    if (isLoadingMore || !hasMore || searchTerm.trim().length > 0) return;
-    setIsLoadingMore(true);
+  const fetchUsersFromMySQL = useCallback(async () => {
+    setIsLoading(true);
     try {
-      const moreUsers = await getArchivedUsers();
-      
-      const existingIds = new Set(users.map(u => u.id));
-      const newItems = moreUsers.filter(u => !existingIds.has(u.id));
-      
-      setUsers(prev => [...prev, ...newItems]);
-      setHasMore(false);
-    } catch (error) {
-      console.error("Error loading more users:", error);
+      const res = await fetch('/api/db/users');
+      const json = await res.json();
+      if (json.success && Array.isArray(json.users)) {
+        setUsers(json.users);
+      }
+    } catch (err) {
+      console.error("Error fetching users from MySQL:", err);
+      toast({ title: "Error", description: "Failed to load users from database.", variant: "destructive" });
     } finally {
-      setIsLoadingMore(false);
+      setIsLoading(false);
     }
-  };
+  }, [toast]);
+
+  useEffect(() => {
+    fetchUsersFromMySQL();
+  }, [fetchUsersFromMySQL]);
 
   const filteredUsers = useMemo(() => {
     if (!searchTerm) return users;
     
     const lowerSearch = searchTerm.toLowerCase().trim();
-    // Normalize search term for phone: remove non-digits and leading 91
     const normalizedSearchPhone = lowerSearch.replace(/\D/g, '').replace(/^91/, '');
 
     return users.filter(user => {
       const nameMatch = (user.displayName || '').toLowerCase().includes(lowerSearch);
       const emailMatch = (user.email || '').toLowerCase().includes(lowerSearch);
       
-      // Normalize user phone for comparison
       const userPhone = (user.mobileNumber || '').replace(/\D/g, '').replace(/^91/, '');
       const phoneMatch = normalizedSearchPhone ? userPhone.includes(normalizedSearchPhone) : false;
       
@@ -199,11 +118,16 @@ export default function AdminUsersPage() {
     setIsUpdatingStatus(userId);
     try {
       const newStatus = !currentStatus;
-      await updateDoc(doc(db, "users", userId), { isActive: newStatus });
-      await triggerRefresh('users'); // SmartSync
+      await fetch('/api/db/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: userId, isActive: newStatus ? 1 : 0 })
+      });
+      
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, isActive: newStatus } : u));
+      await triggerRefresh('users');
       toast({ title: "Status Updated", description: `User is now ${newStatus ? 'Active' : 'Disabled'}.` });
 
-      // Automatically send account activated or disabled status update email
       const targetUser = users.find(u => u.id === userId);
       if (targetUser && targetUser.email && appConfig?.smtpHost) {
         sendAccountStatusEmail({
@@ -232,9 +156,10 @@ export default function AdminUsersPage() {
     if (!userId) return;
     setIsDeleting(userId);
     try {
-      await deleteDoc(doc(db, "users", userId));
-      await triggerRefresh('users'); // SmartSync
-      toast({ title: "User Deleted", description: "The record has been removed from Firestore." });
+      await fetch(`/api/db/users?userId=${userId}`, { method: 'DELETE' });
+      setUsers(prev => prev.filter(u => u.id !== userId));
+      await triggerRefresh('users');
+      toast({ title: "User Deleted", description: "The record has been removed from MySQL." });
     } catch (error) {
       toast({ title: "Delete Failed", variant: "destructive" });
     } finally {
@@ -250,26 +175,14 @@ export default function AdminUsersPage() {
   const handleUpdateUserFromModal = async (updatedUserData: Partial<FirestoreUser>) => {
     if (!selectedUserForModal?.id) return false;
     try {
-        // Update user document
-        await updateDoc(doc(db, "users", selectedUserForModal.id), updatedUserData);
+        await fetch('/api/db/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: selectedUserForModal.id, ...updatedUserData })
+        });
         
-        // If username was updated, sync it with ArtistApplications
-        if (updatedUserData.username && updatedUserData.username !== selectedUserForModal.username) {
-            const appDocRef = doc(db, "ArtistApplications", selectedUserForModal.id);
-            const appDocSnap = await getDocs(query(collection(db, "ArtistApplications"), where("userId", "==", selectedUserForModal.id), limit(1)));
-            
-            if (!appDocSnap.empty) {
-                const appDoc = appDocSnap.docs[0];
-                await updateDoc(doc(db, "ArtistApplications", appDoc.id), { username: updatedUserData.username });
-                await triggerRefresh('artists');
-                const appData = appDoc.data() as ArtistApplication;
-                if (appData.workCategorySlug) {
-                    await triggerRefresh(`category-${appData.workCategorySlug}`);
-                }
-            }
-        }
-
-        await triggerRefresh('users'); // SmartSync
+        setUsers(prev => prev.map(u => u.id === selectedUserForModal.id ? { ...u, ...updatedUserData } : u));
+        await triggerRefresh('users');
         toast({ title: "Updated", description: "User details synchronized." });
         setIsUserDetailsModalOpen(false);
         return true;
@@ -298,368 +211,233 @@ export default function AdminUsersPage() {
     return {
       headers,
       data: filteredUsers.map(user => keys.map(key => {
-        if (key === 'fullAddress') {
-          const primaryAddress = user.addresses?.find(a => a.isDefault) || user.addresses?.[0];
-          return primaryAddress ? formatAddress(primaryAddress) : "N/A";
-        }
-        if (key === 'createdAt' || key === 'lastLoginAt') {
-          const timestamp = user[key];
-          return timestamp ? formatUserTimestamp(timestamp) : "N/A";
-        }
-        if (key === 'isActive') return user.isActive ? "Active" : "Disabled";
-        return user[key as keyof FirestoreUser] ?? 'N/A';
+        if (key === 'fullAddress') return formatAddress(user.addresses?.[0]);
+        if (key === 'isActive') return user.isActive ? 'Active' : 'Disabled';
+        if (key === 'createdAt' || key === 'lastLoginAt') return formatUserTimestamp((user as any)[key]);
+        return (user as any)[key] ?? 'N/A';
       }))
     };
   };
 
-  const handleDownload = (format: 'csv' | 'excel' | 'pdf') => {
+  const handleExportCSV = () => {
     const { headers, data } = processDataForDownload();
-    if (data.length === 0) return;
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const filename = `users_export_${timestamp}`;
-    if (format === 'csv') {
-      const csvContent = [headers.join(','), ...data.map(row => row.join(','))].join('\n');
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.download = `${filename}.csv`;
-      link.click();
-    } else if (format === 'excel') {
-      const worksheet = XLSX.utils.aoa_to_sheet([headers, ...data]);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Users");
-      XLSX.writeFile(workbook, `${filename}.xlsx`);
-    } else if (format === 'pdf') {
-      const doc = new jsPDF();
-      doc.text("User Directory Export", 14, 16);
-      (doc as any).autoTable({ head: [headers], body: data, startY: 20 });
-      doc.save(`${filename}.pdf`);
-    }
+    const csvRows = [headers.join(',')];
+    data.forEach(row => {
+      csvRows.push(row.map(field => `"${String(field).replace(/"/g, '""')}"`).join(','));
+    });
+    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `users_export_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+    setIsExportDialogOpen(false);
   };
 
-  const renderUserCard = (user: FirestoreUser, idx: number) => (
-    <motion.div 
-      key={user.id}
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, delay: idx < 10 ? idx * 0.05 : 0 }}
-      className="p-5 border-b last:border-none bg-card hover:bg-muted/30 transition-colors"
-    >
-      <div className="flex justify-between items-start mb-4">
-        <div className="flex items-center gap-3 text-left">
-          <div className="relative">
-            <Avatar 
-              className="h-12 w-12 border-2 border-primary/10 shadow-sm cursor-zoom-in"
-              onClick={() => user.photoURL && setSelectedImage(user.photoURL)}
-            >
-              <AvatarImage src={user.photoURL || undefined} alt={user.displayName || user.email || undefined} />
-              <AvatarFallback className="bg-primary/5 text-primary font-black uppercase">
-                {user.displayName ? user.displayName.charAt(0) : <UserCircle size={24}/>}
-              </AvatarFallback>
-            </Avatar>
-            <div className={cn("absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 border-2 border-background rounded-full", user.isActive ? "bg-emerald-500" : "bg-destructive")} />
-          </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <p className="font-black text-sm text-foreground truncate tracking-tight">{user.displayName || 'Anonymous User'}</p>
-              {user.username && <span className="text-[10px] font-bold text-primary bg-primary/5 px-1.5 py-0.5 rounded">@{user.username}</span>}
-            </div>
-            <p className="text-[10px] text-muted-foreground font-mono truncate max-w-[150px]">ID: {user.uid}</p>
-          </div>
-        </div>
-        <StatusBadge isActive={user.isActive} isLoading={isUpdatingStatus === user.id} />
-      </div>
+  const handleExportExcel = () => {
+    const { headers, data } = processDataForDownload();
+    const worksheet = XLSX.utils.aoa_to_sheet([headers, ...data]);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Users");
+    XLSX.writeFile(workbook, `users_export_${new Date().toISOString().split('T')[0]}.xlsx`);
+    setIsExportDialogOpen(false);
+  };
 
-      <div className="grid grid-cols-1 gap-2 mb-5">
-        <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-          <Mail className="h-3.5 w-3.5 text-primary/60" />
-          <span className="truncate">{user.email || 'N/A'}</span>
-        </div>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-            <Phone className="h-3.5 w-3.5 text-primary/60" />
-            <span>{user.mobileNumber || 'No Phone'}</span>
-          </div>
-          {user.mobileNumber && (
-            <Button variant="ghost" size="sm" className="h-7 px-2 text-emerald-600 bg-emerald-500/5 hover:bg-emerald-500/10 rounded-lg" onClick={(e) => handleWhatsAppClick(e, user.mobileNumber!)}>
-              <MessageCircle className="h-3.5 w-3.5 mr-1.5" />
-              <span className="text-[10px] font-black uppercase">WhatsApp</span>
-            </Button>
-          )}
-        </div>
-        <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-          <Calendar className="h-3.5 w-3.5 text-primary/60" />
-          <span>Joined {formatUserTimestamp(user.createdAt)}</span>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-2 pt-2 border-t border-dashed">
-        <Button 
-          variant="outline" 
-          className="flex-grow h-10 rounded-xl font-bold text-xs uppercase tracking-wider shadow-sm border-primary/20 text-primary hover:bg-primary hover:text-primary-foreground transition-all duration-300" 
-          onClick={() => handleViewDetails(user)}
-        >
-          <Eye className="h-4 w-4 mr-2" /> View Details
-        </Button>
-        <Button 
-          variant="ghost"
-          className={cn(
-            "h-10 px-3 rounded-xl shadow-sm transition-all duration-300",
-            user.isActive 
-              ? "bg-amber-500/10 text-amber-600 hover:bg-amber-500 hover:text-white" 
-              : "bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500 hover:text-white"
-          )}
-          onClick={() => handleToggleUserStatus(user.id, user.isActive)}
-          disabled={isUpdatingStatus === user.id}
-        >
-          {user.isActive ? <UserX className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}
-        </Button>
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button variant="ghost" className="h-10 px-3 rounded-xl bg-destructive/5 text-destructive border border-destructive/10 hover:bg-destructive hover:text-white transition-all duration-300 shadow-sm" disabled={isDeleting === user.id || !user.id}>
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent className="rounded-[2.5rem]">
-            <AlertDialogHeader>
-              <div className="bg-destructive/10 w-12 h-12 rounded-2xl flex items-center justify-center mb-4"><ShieldAlert className="h-6 w-6 text-destructive" /></div>
-              <AlertDialogTitle className="text-xl font-black tracking-tight uppercase">Confirm Deletion</AlertDialogTitle>
-              <AlertDialogDescription className="font-medium text-sm">Remove <span className="text-destructive font-black underline">{user.displayName || user.email}</span> from system?</AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter className="mt-6">
-              <AlertDialogCancel className="rounded-xl border-none bg-muted">Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={() => handleDeleteUser(user.id!)} className="bg-destructive hover:bg-destructive/90 rounded-xl px-6">Confirm Delete</AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </div>
-    </motion.div>
-  );
+  const handleExportPDF = () => {
+    const { headers, data } = processDataForDownload();
+    const doc = new jsPDF();
+    (doc as any).autoTable({
+      head: [headers],
+      body: data,
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [41, 128, 185] },
+    });
+    doc.save(`users_export_${new Date().toISOString().split('T')[0]}.pdf`);
+    setIsExportDialogOpen(false);
+  };
 
   return (
-    <div className="space-y-8 pb-10">
-      <header className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 pb-2 border-b">
-        <div className="space-y-1">
-          <div className="flex items-center space-x-2 text-primary">
-            <Users className="h-4 w-4" />
-            <span className="text-[10px] font-black uppercase tracking-[0.2em]">Community Database</span>
-          </div>
-          <h1 className="text-4xl font-black tracking-tight">User Directory</h1>
-          <p className="text-muted-foreground text-sm font-medium">Manage and audit your registered user ecosystem.</p>
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h1 className="text-3xl font-black tracking-tight flex items-center gap-2">
+            <Users className="h-8 w-8 text-primary" /> User Management
+          </h1>
+          <p className="text-sm text-muted-foreground">View and manage registered user accounts.</p>
         </div>
-      </header>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setIsExportDialogOpen(true)}>
+            <Download className="mr-2 h-4 w-4" /> Export Users
+          </Button>
+        </div>
+      </div>
 
-      <Card className="border-none shadow-2xl rounded-[2.5rem] overflow-hidden bg-card">
-        <CardHeader className="p-8 pb-4">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-            <div className="relative flex-grow w-full max-w-2xl group">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors"/>
-              <Input placeholder="Search name, email, or mobile..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-12 h-14 bg-muted/30 border-none focus-visible:ring-2 focus-visible:ring-primary/20 rounded-[1.25rem] font-medium transition-all shadow-inner" />
-              {searchTerm && (
-                  <Button variant="ghost" size="icon" className="absolute right-2 top-1/2 -translate-y-1/2 h-9 w-9 rounded-xl hover:bg-primary/10 hover:text-primary" onClick={() => setSearchTerm('')}>
-                      <XCircle className="h-5 w-5 text-muted-foreground"/>
-                  </Button>
-              )}
+      <Card className="border-primary/10 shadow-sm">
+        <CardHeader className="pb-3">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="relative w-full sm:w-96">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search by name, email, phone..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-9 bg-secondary/20"
+              />
             </div>
-            <Button 
-              className="h-14 px-6 rounded-[1.25rem] bg-primary text-primary-foreground font-black uppercase text-xs tracking-widest shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all duration-300"
-              onClick={() => setIsExportDialogOpen(true)}
-            >
-                <Download className="mr-2.5 h-4 w-4" /> Export Data
-            </Button>
+            <div className="text-xs text-muted-foreground font-semibold">
+              Showing {filteredUsers.length} user{filteredUsers.length === 1 ? '' : 's'}
+            </div>
           </div>
         </CardHeader>
-
         <CardContent className="p-0">
           {isLoading ? (
-            <div className="flex flex-col justify-center items-center h-[400px] space-y-4">
-              <Loader2 className="h-12 w-12 animate-spin text-primary/40" />
-              <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] animate-pulse">Scanning Registry...</p>
+            <div className="flex justify-center items-center py-20">
+              <Loader2 className="h-10 w-10 animate-spin text-primary" />
             </div>
           ) : filteredUsers.length === 0 ? (
-            <div className="text-center py-32 bg-muted/5">
-              <PackageSearch className="h-16 w-16 mx-auto text-muted-foreground/20 mb-6" />
-              <p className="text-xl font-bold tracking-tight text-foreground">Zero Matches Found</p>
-              <p className="text-muted-foreground text-sm mt-1">{searchTerm ? "Adjust your search filters." : "No users currently registered."}</p>
+            <div className="text-center py-20 space-y-3">
+              <Users className="h-12 w-12 text-muted-foreground mx-auto" />
+              <p className="text-lg font-bold text-muted-foreground">No users found</p>
             </div>
           ) : (
-            <>
-              <div className="hidden md:block overflow-x-auto">
-                <Table>
-                  <TableHeader className="bg-muted/30">
-                    <TableRow className="hover:bg-transparent border-none">
-                      <TableHead className="w-[80px] pl-8 py-5 text-[10px] font-black uppercase tracking-widest">Profile</TableHead>
-                      <TableHead className="text-[10px] font-black uppercase tracking-widest text-foreground">Legal Name & UID</TableHead>
-                      <TableHead className="text-[10px] font-black uppercase tracking-widest text-foreground">Username</TableHead>
-                      <TableHead className="text-[10px] font-black uppercase tracking-widest text-foreground">Communications</TableHead>
-                      <TableHead className="text-[10px] font-black uppercase tracking-widest text-foreground">Registered</TableHead>
-                      <TableHead className="text-center text-[10px] font-black uppercase tracking-widest text-foreground">Live Status</TableHead>
-                      <TableHead className="text-right pr-8 text-[10px] font-black uppercase tracking-widest text-foreground">Management</TableHead>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>User</TableHead>
+                    <TableHead>Contact</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Joined</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredUsers.map((user) => (
+                    <TableRow key={user.id} className="hover:bg-secondary/10">
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <Avatar className="h-9 w-9">
+                            <AvatarImage src={user.photoURL || undefined} />
+                            <AvatarFallback>{user.displayName?.charAt(0) || 'U'}</AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <p className="font-bold text-sm">{user.displayName || 'No Name'}</p>
+                            <p className="text-xs text-muted-foreground">{user.email || 'No Email'}</p>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="text-xs space-y-0.5">
+                          <p className="flex items-center gap-1 font-medium">
+                            <Phone className="h-3 w-3 text-muted-foreground" /> {user.mobileNumber || 'N/A'}
+                            {user.mobileNumber && (
+                              <button onClick={(e) => handleWhatsAppClick(e, user.mobileNumber!)} className="text-emerald-500 hover:text-emerald-600 ml-1">
+                                <AppImage src="/whatsapp.png" alt="WA" width={14} height={14} />
+                              </button>
+                            )}
+                          </p>
+                          <p className="flex items-center gap-1 text-muted-foreground">
+                            <Mail className="h-3 w-3" /> {user.email || 'N/A'}
+                          </p>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <StatusBadge isActive={!!user.isActive} isLoading={isUpdatingStatus === user.id} />
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {formatUserTimestamp(user.createdAt)}
+                      </TableCell>
+                      <TableCell className="text-right space-x-2">
+                        <Button variant="ghost" size="icon" onClick={() => handleViewDetails(user)} title="View User Details">
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleToggleUserStatus(user.id, !!user.isActive)}
+                          disabled={isUpdatingStatus === user.id}
+                          title={user.isActive ? "Disable User" : "Activate User"}
+                          className={user.isActive ? "text-amber-600 hover:text-amber-700" : "text-emerald-600 hover:text-emerald-700"}
+                        >
+                          {isUpdatingStatus === user.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : user.isActive ? (
+                            <UserX className="h-4 w-4" />
+                          ) : (
+                            <UserCheck className="h-4 w-4" />
+                          )}
+                        </Button>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" title="Delete User">
+                              {isDeleting === user.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete User Account?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Are you sure you want to delete <strong>{user.displayName || user.email}</strong>? This action cannot be undone.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => handleDeleteUser(user.id)} className="bg-destructive text-destructive-foreground">
+                                Delete
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </TableCell>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    <AnimatePresence initial={false}>
-                      {filteredUsers.map((user, idx) => (
-                        <motion.tr key={user.id} initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, delay: idx < 15 ? idx * 0.03 : 0 }} className="group border-b border-muted/40 transition-all hover:bg-primary/[0.02]">
-                          <TableCell className="pl-8">
-                            <Avatar 
-                              className="h-10 w-10 border shadow-sm group-hover:scale-110 transition-transform cursor-zoom-in"
-                              onClick={() => user.photoURL && setSelectedImage(user.photoURL)}
-                            >
-                              <AvatarImage src={user.photoURL || undefined} alt={user.displayName || user.email || undefined} />
-                              <AvatarFallback className="text-xs font-black bg-primary/10 text-primary">{user.displayName ? user.displayName.charAt(0).toUpperCase() : 'U'}</AvatarFallback>
-                            </Avatar>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex flex-col">
-                              <span className="font-bold text-foreground">{user.displayName || "Unset Name"}</span>
-                              <span className="text-[10px] font-mono text-muted-foreground uppercase tracking-tighter" title={user.uid}>{user.uid.substring(0,14)}...</span>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <span className="text-xs font-bold text-primary bg-primary/5 px-2 py-1 rounded-md">{user.username ? `@${user.username}` : "N/A"}</span>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex flex-col gap-1">
-                              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground truncate max-w-[200px]"><Mail className="h-3 w-3 text-primary/60 shrink-0" /> {user.email}</div>
-                              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                                <Phone className="h-3 w-3 text-primary/60 shrink-0" /> <span>{user.mobileNumber || "No Contact"}</span>
-                                {user.mobileNumber && <button onClick={(e) => handleWhatsAppClick(e, user.mobileNumber!)} className="p-1 hover:bg-emerald-100 dark:hover:bg-emerald-900 rounded-md transition-colors"><AppImage src="/whatsapp.png" alt="WA" width={14} height={14} /></button>}
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-xs font-black text-muted-foreground uppercase tracking-tighter">{formatUserTimestamp(user.createdAt)}</TableCell>
-                          <TableCell className="text-center">
-                            <button onClick={() => handleToggleUserStatus(user.id, user.isActive)} className="focus:outline-none" disabled={isUpdatingStatus === user.id}>
-                              <StatusBadge isActive={user.isActive} isLoading={isUpdatingStatus === user.id} />
-                            </button>
-                          </TableCell>
-                          <TableCell className="pr-8 text-right">
-                            <div className="flex items-center justify-end gap-2">
-                              <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl hover:bg-primary hover:text-primary-foreground transition-all duration-300 shadow-sm border border-primary/10" onClick={() => handleViewDetails(user)}><Eye className="h-4 w-4" /></Button>
-                              <AlertDialog>
-                                <AlertDialogTrigger asChild>
-                                  <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl hover:bg-destructive hover:text-destructive-foreground transition-all duration-300 shadow-sm border border-destructive/10" disabled={isDeleting === user.id || !user.id}><Trash2 className="h-4 w-4" /></Button>
-                                </AlertDialogTrigger>
-                                <AlertDialogContent className="rounded-[2.5rem] p-8 border-none shadow-2xl bg-card">
-                                  <AlertDialogHeader>
-                                    <div className="bg-destructive/10 w-12 h-12 rounded-2xl flex items-center justify-center mb-4"><ShieldAlert className="h-6 w-6 text-destructive" /></div>
-                                    <AlertDialogTitle className="text-2xl font-black tracking-tight uppercase text-foreground">User Expulsion</AlertDialogTitle>
-                                    <AlertDialogDescription className="text-base font-medium text-muted-foreground">This will permanently erase <span className="text-destructive font-black underline">{user.displayName || user.email}</span> from the Firestore database.</AlertDialogDescription>
-                                  </AlertDialogHeader>
-                                  <AlertDialogFooter className="mt-8 gap-3">
-                                    <AlertDialogCancel className="rounded-xl border-none bg-muted hover:bg-muted/80 text-foreground">Retain</AlertDialogCancel>
-                                    <AlertDialogAction onClick={() => handleDeleteUser(user.id!)} className="rounded-xl bg-destructive hover:bg-destructive/90 px-8 text-white">Confirm Erase</AlertDialogAction>
-                                  </AlertDialogFooter>
-                                </AlertDialogContent>
-                              </AlertDialog>
-                            </div>
-                          </TableCell>
-                        </motion.tr>
-                      ))}
-                    </AnimatePresence>
-                  </TableBody>
-                </Table>
-              </div>
-              <div className="md:hidden">
-                <AnimatePresence initial={false}>
-                  {filteredUsers.map((user, idx) => renderUserCard(user, idx))}
-                </AnimatePresence>
-              </div>
-
-              {hasMore && !searchTerm && (
-                <div className="p-8 text-center border-t border-muted/40">
-                  <Button 
-                    variant="outline" 
-                    size="lg" 
-                    onClick={loadMoreUsers} 
-                    disabled={isLoadingMore} 
-                    className="min-w-[200px] rounded-2xl border-2 border-primary/20 hover:bg-primary hover:text-primary-foreground transition-all duration-300 shadow-sm font-black uppercase text-xs tracking-widest h-12"
-                  >
-                    {isLoadingMore ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : <ChevronDown className="h-5 w-5 mr-2" />}
-                    Load More Users
-                  </Button>
-                </div>
-              )}
-            </>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           )}
         </CardContent>
       </Card>
 
-      {selectedUserForModal && (
+      {/* User Details Modal */}
+      {selectedUserForModal && isUserDetailsModalOpen && (
         <Dialog open={isUserDetailsModalOpen} onOpenChange={setIsUserDetailsModalOpen}>
-          <DialogContent className="max-w-2xl w-[95vw] max-h-[90vh] flex flex-col p-0 border-none shadow-2xl rounded-[2.5rem] overflow-hidden bg-card">
-            <UserDetailsModal user={selectedUserForModal} onClose={() => setIsUserDetailsModalOpen(false)} onUpdateUser={handleUpdateUserFromModal} />
+          <DialogContent className="max-w-3xl p-0 overflow-hidden">
+            <UserDetailsModal
+              user={selectedUserForModal}
+              onClose={() => setIsUserDetailsModalOpen(false)}
+              onUpdateUser={handleUpdateUserFromModal}
+            />
           </DialogContent>
         </Dialog>
       )}
 
-      {/* Image Preview Dialog */}
-      <Dialog open={!!selectedImage} onOpenChange={(open) => !open && setSelectedImage(null)}>
-        <DialogContent className="max-w-md p-0 border-none bg-transparent shadow-none flex items-center justify-center">
-          <DialogHeader className="sr-only">
-            <DialogTitle>Profile Photo Preview</DialogTitle>
-          </DialogHeader>
-          {selectedImage && (
-            <div className="relative w-[90vw] h-[90vw] max-w-[400px] max-h-[400px] rounded-[2.5rem] overflow-hidden border-4 border-white shadow-2xl bg-card">
-              <AppImage src={selectedImage} alt="Profile Preview" fill className="object-cover" />
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                className="absolute top-4 right-4 h-10 w-10 rounded-full bg-black/20 hover:bg-black/40 text-white backdrop-blur-md"
-                onClick={() => setSelectedImage(null)}
-              >
-                <XCircle className="h-6 w-6" />
-              </Button>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
+      {/* Export Dialog */}
       <Dialog open={isExportDialogOpen} onOpenChange={setIsExportDialogOpen}>
-        <DialogContent className="max-w-md w-[95vw] border-none shadow-2xl rounded-[2.5rem] p-8 bg-card">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <div className="bg-primary/10 w-12 h-12 rounded-2xl flex items-center justify-center mb-4">
-              <Download className="h-6 w-6 text-primary" />
-            </div>
-            <DialogTitle className="text-2xl font-black tracking-tight uppercase text-foreground">Export Directory</DialogTitle>
-            <DialogDescription className="text-sm font-medium text-muted-foreground">Select the data columns you wish to include in your document.</DialogDescription>
+            <DialogTitle>Export User Data</DialogTitle>
+            <DialogDescription>Select fields and file format to export.</DialogDescription>
           </DialogHeader>
-
-          <div className="py-6">
-            <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-3">
               {availableFields.map(field => (
-                <div key={field.key} className="flex items-center space-x-3 p-3 rounded-xl border bg-muted/20 hover:bg-primary/5 transition-colors">
-                  <Checkbox 
-                    id={`field-${field.key}`} 
-                    checked={selectedFields[field.key]} 
-                    onCheckedChange={(checked) => setSelectedFields(prev => ({...prev, [field.key]: !!checked}))}
-                    className="h-5 w-5 rounded-md border-primary/20 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+                <div key={field.key} className="flex items-center space-x-2">
+                  <Checkbox
+                    id={`field-${field.key}`}
+                    checked={!!selectedFields[field.key]}
+                    onCheckedChange={(checked) => setSelectedFields(prev => ({ ...prev, [field.key]: !!checked }))}
                   />
-                  <Label htmlFor={`field-${field.key}`} className="text-xs font-bold cursor-pointer flex-grow py-1 text-foreground">{field.label}</Label>
+                  <Label htmlFor={`field-${field.key}`} className="text-xs font-semibold cursor-pointer">{field.label}</Label>
                 </div>
               ))}
             </div>
-          </div>
-
-          <DialogFooter className="flex flex-col sm:flex-col gap-3">
-            <div className="grid grid-cols-1 gap-2 w-full">
-              <Button onClick={() => { handleDownload('pdf'); setIsExportDialogOpen(false); }} className="w-full h-12 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-xs uppercase tracking-widest shadow-lg shadow-primary/20 transition-all duration-300">
-                <FilePdfIcon className="mr-2 h-4 w-4" /> Download PDF Document
-              </Button>
-              <div className="grid grid-cols-2 gap-2">
-                <Button onClick={() => { handleDownload('excel'); setIsExportDialogOpen(false); }} variant="outline" className="h-12 rounded-xl border-2 border-accent/20 text-accent font-bold text-xs uppercase tracking-widest hover:bg-accent hover:text-accent-foreground transition-all duration-300">
-                  <FileSpreadsheet className="mr-2 h-4 w-4" /> Excel
-                </Button>
-                <Button onClick={() => { handleDownload('csv'); setIsExportDialogOpen(false); }} variant="outline" className="h-12 rounded-xl border-2 border-primary/20 text-primary font-bold text-xs uppercase tracking-widest hover:bg-primary hover:text-primary-foreground transition-all duration-300">
-                  <FileDown className="mr-2 h-4 w-4" /> CSV Raw
-                </Button>
-              </div>
+            <div className="flex gap-2 pt-4">
+              <Button onClick={handleExportCSV} className="flex-1" variant="outline"><FilePdfIcon className="mr-2 h-4 w-4" /> CSV</Button>
+              <Button onClick={handleExportExcel} className="flex-1" variant="outline"><FileSpreadsheet className="mr-2 h-4 w-4" /> Excel</Button>
+              <Button onClick={handleExportPDF} className="flex-1" variant="outline"><FilePdfIcon className="mr-2 h-4 w-4" /> PDF</Button>
             </div>
-            <Button variant="ghost" onClick={() => setIsExportDialogOpen(false)} className="w-full h-11 rounded-xl bg-destructive/5 text-destructive font-black text-[10px] uppercase tracking-[0.2em] mt-2 border border-destructive/10 hover:bg-destructive hover:text-white transition-all duration-300">
-              Cancel Export
-            </Button>
-          </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

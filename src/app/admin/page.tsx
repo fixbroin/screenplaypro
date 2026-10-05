@@ -76,7 +76,7 @@ export default function AdminDashboardPage() {
       } else {
         toast({
           title: "Error",
-          description: result.error || "Failed to clear search hotspots.",
+          description: (result as any).error || "Failed to clear search hotspots.",
           variant: "destructive",
         });
       }

@@ -1,8 +1,5 @@
-
 "use client";
 
-import { db } from '@/lib/firebase';
-import { doc, setDoc, deleteDoc, getDoc, Timestamp } from 'firebase/firestore';
 import type { UserCart } from '@/types/firestore';
 
 export interface CartEntry {
@@ -12,9 +9,6 @@ export interface CartEntry {
 
 const CART_STORAGE_KEY = 'screenplayproUserCart';
 
-/**
- * Gets cart entries from localStorage. This is the primary source for guests and the initial source for logged-in users before sync.
- */
 export const getCartEntries = (): CartEntry[] => {
   if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
     return [];
@@ -32,9 +26,6 @@ export const getCartEntries = (): CartEntry[] => {
   return [];
 };
 
-/**
- * Saves cart entries to localStorage. This is always done for both guests and logged-in users to provide instant UI feedback.
- */
 export const saveCartEntries = (entries: CartEntry[]): void => {
   if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
     return;
@@ -42,35 +33,26 @@ export const saveCartEntries = (entries: CartEntry[]): void => {
   window.localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(entries));
 };
 
-/**
- * Synchronizes the local cart with Firestore upon login.
- * It fetches the Firestore cart, merges it with the local cart (giving precedence to local items),
- * saves the merged result back to both Firestore and localStorage.
- * @param userId The UID of the logged-in user.
- */
 export const syncCartOnLogin = async (userId: string): Promise<void> => {
     if (!userId) return;
-
     const localCart = getCartEntries();
-    const cartDocRef = doc(db, 'userCarts', userId);
 
     try {
-        const firestoreCartSnap = await getDoc(cartDocRef);
-        const firestoreCartItems: CartEntry[] = firestoreCartSnap.exists() ? (firestoreCartSnap.data() as UserCart).items : [];
+        const res = await fetch(`/api/db/collections?name=userCarts&id=${userId}`);
+        const json = await res.json();
+        const firestoreCartItems: CartEntry[] = (json.success && json.data) ? (json.data as UserCart).items : [];
 
-        // Merge logic: local cart takes precedence
         const mergedCartMap = new Map<string, number>();
 
         firestoreCartItems.forEach(item => {
             mergedCartMap.set(item.serviceId, item.quantity);
         });
         localCart.forEach(item => {
-            mergedCartMap.set(item.serviceId, item.quantity); // Overwrite with local quantity if it exists
+            mergedCartMap.set(item.serviceId, item.quantity);
         });
 
         const mergedCart: CartEntry[] = Array.from(mergedCartMap.entries()).map(([serviceId, quantity]) => ({ serviceId, quantity }));
         
-        // Save the final merged cart to both locations
         saveCartEntries(mergedCart); 
         await syncCartToFirestore(userId, mergedCart);
 
@@ -83,51 +65,43 @@ export const syncCartOnLogin = async (userId: string): Promise<void> => {
     }
 };
 
-/**
- * Saves the cart to Firestore for a logged-in user. Also used for clearing the cart.
- * @param userId The UID of the logged-in user.
- * @param cartEntries The current state of the cart to save.
- */
 export const syncCartToFirestore = async (userId: string, cartEntries: CartEntry[]) => {
   if (!userId) return;
 
-  const cartDocRef = doc(db, 'userCarts', userId);
-
   if (cartEntries.length > 0) {
     try {
-      await setDoc(cartDocRef, {
-        userId: userId,
-        items: cartEntries,
-        updatedAt: Timestamp.now(),
-        marketingStatus: {
-          reminderSent: false // Reset flag so they get a new reminder if they abandon this update
-        }
-      }, { merge: true });
+      await fetch('/api/db/collections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          collectionName: 'userCarts',
+          id: userId,
+          data: {
+            userId: userId,
+            items: cartEntries,
+            updatedAt: new Date().toISOString(),
+            marketingStatus: { reminderSent: false }
+          }
+        })
+      });
     } catch (error) {
-      console.error("Error syncing cart to Firestore:", error);
+      console.error("Error syncing cart to MySQL:", error);
     }
   } else {
-    // If cart is empty, delete the document from Firestore
     try {
-      await deleteDoc(cartDocRef);
+      await fetch(`/api/db/collections?name=userCarts&id=${userId}`, { method: 'DELETE' });
     } catch (error) {
-      console.error("Error deleting empty cart from Firestore:", error);
+      console.error("Error deleting empty cart from MySQL:", error);
     }
   }
 };
 
-/**
- * Saves the active checkout items to localStorage when proceeding from the cart.
- */
 export const saveActiveCheckoutEntries = (entries: CartEntry[]): void => {
   if (typeof window !== 'undefined' && window.localStorage) {
     window.localStorage.setItem('screenplayproActiveCheckoutItems', JSON.stringify(entries));
   }
 };
 
-/**
- * Gets the active checkout cart entries. If none are explicitly set (e.g. older flow), it falls back to the full cart.
- */
 export const getActiveCheckoutEntries = (): CartEntry[] => {
   if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
     return [];
@@ -144,9 +118,6 @@ export const getActiveCheckoutEntries = (): CartEntry[] => {
   return getCartEntries();
 };
 
-/**
- * Removes checked out items from the main cart after a successful booking.
- */
 export const removeCheckedOutItemsFromCart = async (userId: string | undefined): Promise<void> => {
   const allCart = getCartEntries();
   const checkedOut = getActiveCheckoutEntries();

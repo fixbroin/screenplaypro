@@ -1,5 +1,5 @@
 import nodemailer from 'nodemailer';
-import { adminDb } from '@/lib/firebaseAdmin';
+import { queryDb } from '@/lib/mysql';
 import { ADMIN_EMAIL } from '@/lib/constants';
 
 interface SMTPConfig {
@@ -20,9 +20,9 @@ async function getSmtpConfig(): Promise<SMTPConfig> {
   };
 
   try {
-    const docSnap = await adminDb.collection('webSettings').doc('applicationConfig').get();
-    if (docSnap.exists) {
-      const data = docSnap.data();
+    const rows = await queryDb<any[]>('SELECT setting_value FROM app_settings WHERE setting_key = ?', ['applicationConfig']);
+    if (rows && rows.length > 0) {
+      const data = typeof rows[0].setting_value === 'string' ? JSON.parse(rows[0].setting_value) : rows[0].setting_value;
       if (data?.smtpHost) config.smtpHost = data.smtpHost;
       if (data?.smtpPort) config.smtpPort = data.smtpPort;
       if (data?.smtpUser) config.smtpUser = data.smtpUser;
@@ -30,7 +30,7 @@ async function getSmtpConfig(): Promise<SMTPConfig> {
       if (data?.senderEmail) config.senderEmail = data.senderEmail;
     }
   } catch (err) {
-    console.warn("Could not read SMTP settings from Firestore, using env fallback:", err);
+    console.warn("Could not read SMTP settings from MySQL app_settings, using env fallback:", err);
   }
 
   return config;

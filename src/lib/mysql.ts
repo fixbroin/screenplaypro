@@ -39,12 +39,19 @@ export async function initDb() {
           subscriptionPlanName VARCHAR(255),
           subscriptionExpiresAt DATETIME,
           lastSubscriptionAt DATETIME,
+          lastLoginAt DATETIME,
           createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
           updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
           INDEX idx_email (email),
           INDEX idx_username (username)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
       `);
+
+      try {
+        await connection.query(`ALTER TABLE users ADD COLUMN lastLoginAt DATETIME;`);
+      } catch (e) {
+        // column already exists
+      }
 
       // 2. Scripts Table
       await connection.query(`
@@ -117,14 +124,27 @@ export async function initDb() {
           title VARCHAR(255),
           subtitle VARCHAR(255),
           imageUrl TEXT NOT NULL,
+          imageHint TEXT,
           ctaText VARCHAR(255),
           ctaLink VARCHAR(255),
+          buttonLinkType VARCHAR(50),
           \`order\` INT DEFAULT 1,
           isActive TINYINT(1) DEFAULT 1,
           createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
           updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
       `);
+
+      try {
+        await connection.query(`ALTER TABLE slideshows ADD COLUMN buttonLinkType VARCHAR(50);`);
+      } catch (e) {
+        // column already exists
+      }
+      try {
+        await connection.query(`ALTER TABLE slideshows ADD COLUMN imageHint TEXT;`);
+      } catch (e) {
+        // column already exists
+      }
 
       // 7. SEO Overrides Table
       await connection.query(`
@@ -151,6 +171,28 @@ export async function initDb() {
           status VARCHAR(50) DEFAULT 'pending',
           requestedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
           INDEX idx_userId (userId)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+
+      // 9. App Settings Table (Key-Value configuration store)
+      await connection.query(`
+        CREATE TABLE IF NOT EXISTS app_settings (
+          setting_key VARCHAR(191) PRIMARY KEY,
+          setting_value LONGTEXT NOT NULL,
+          updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+
+      // 10. Generic Collections Table (JSON document store for admin collections)
+      await connection.query(`
+        CREATE TABLE IF NOT EXISTS generic_collections (
+          id VARCHAR(191) NOT NULL,
+          collection_name VARCHAR(100) NOT NULL,
+          data LONGTEXT NOT NULL,
+          createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          PRIMARY KEY (collection_name, id),
+          INDEX idx_coll (collection_name)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
       `);
 

@@ -11,8 +11,6 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Database, UploadCloud, Download, Loader2, AlertTriangle, MessageSquare, Smartphone, KeyRound, Server, BarChart2, Tv, ListChecks, HelpCircle, FileText, Code, FacebookIcon, Megaphone, Save } from "lucide-react";
 import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase';
-import { doc, getDoc, setDoc, Timestamp } from "firebase/firestore";
 import { triggerRefresh } from '@/lib/revalidateUtils';
 import type { MarketingSettings, FirebaseClientConfig } from '@/types/firestore';
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -96,16 +94,19 @@ export default function MarketingSettingsPage() {
   const handleSaveSettings = async (data: MarketingSettingsFormData) => {
     setIsSaving(true);
     try {
-      const settingsDocRef = doc(db, MARKETING_CONFIG_COLLECTION, MARKETING_CONFIG_DOC_ID);
       const dataToSave: MarketingSettings = {
         ...data,
-        updatedAt: Timestamp.now(),
+        updatedAt: new Date().toISOString(),
       };
-      await setDoc(settingsDocRef, dataToSave, { merge: true });
+      await fetch('/api/db/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'marketingConfiguration', data: dataToSave })
+      });
       await triggerRefresh('marketing-settings');
       await triggerRefresh('global-cache');
       await triggerRefresh('sitemap');
-      toast({ title: "Success", description: "Marketing settings saved successfully." });
+      toast({ title: "Success", description: "Marketing settings saved to MySQL successfully." });
     } catch (error) {
       toast({ title: "Error", description: "Could not save marketing settings.", variant: "destructive" });
     } finally {

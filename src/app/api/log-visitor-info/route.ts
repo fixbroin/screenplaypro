@@ -1,7 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server';
-import { adminDb } from '@/lib/firebaseAdmin';
-import { Timestamp } from 'firebase-admin/firestore';
-import type { FirestoreVisitorInfoLog } from '@/types/firestore';
+import { queryDb } from '@/lib/mysql';
 import { headers } from 'next/headers';
 
 export async function POST(req: NextRequest) {
@@ -19,10 +17,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Missing required fields.' }, { status: 400 });
     }
 
-    // 1. Get Real IP from headers or NextRequest
     const headersList = await headers();
     
-    // Check multiple common headers for real IP
     const cfConnectingIp = headersList.get('cf-connecting-ip');
     const forwardedFor = headersList.get('x-forwarded-for');
     const realIp = headersList.get('x-real-ip');
@@ -42,7 +38,6 @@ export async function POST(req: NextRequest) {
         userIp = (req as any).ip;
     }
 
-    // Sanitize userIp (handle IPv6-wrapped IPv4 and "localhost" string)
     if (userIp === '::1' || userIp === 'localhost' || userIp === '::ffff:127.0.0.1') {
         userIp = '127.0.0.1';
     }
@@ -50,7 +45,6 @@ export async function POST(req: NextRequest) {
         userIp = userIp.replace('::ffff:', '');
     }
 
-    // 2. Fetch Geo-data from Server side (More reliable)
     let geoData = {
         city: 'Unknown City',
         region: 'Unknown Region',
@@ -59,7 +53,6 @@ export async function POST(req: NextRequest) {
         isp: 'Unknown ISP'
     };
 
-    // If it's a local IP, provide friendly labels instead of "Unknown"
     if (userIp === '127.0.0.1') {
         geoData = {
             city: 'Local Dev',
@@ -70,7 +63,6 @@ export async function POST(req: NextRequest) {
         };
     } else if (userIp !== 'unknown') {
         try {
-            // Try ip-api.com (HTTP is free for 45 req/min)
             const geoRes = await fetch(`http://ip-api.com/json/${userIp}`);
             if (geoRes.ok) {
                 const data = await geoRes.json();
@@ -85,7 +77,6 @@ export async function POST(req: NextRequest) {
                 }
             }
             
-            // If primary failed or returned Unknown City, try ipapi.co (HTTPS-friendly fallback)
             if (geoData.city === 'Unknown City') {
                 const fallbackRes = await fetch(`https://ipapi.co/${userIp}/json/`);
                 if (fallbackRes.ok) {
@@ -106,7 +97,9 @@ export async function POST(req: NextRequest) {
         }
     }
     
-    const visitorLog: Omit<FirestoreVisitorInfoLog, 'id' | 'timestamp'> = {
+    const docId = `vis_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const visitorLog = {
+      id: docId,
       ipAddress: userIp,
       city: geoData.city,
       region: geoData.region,
@@ -115,12 +108,13 @@ export async function POST(req: NextRequest) {
       ispOrganization: geoData.isp,
       pathname: pathname,
       userAgent: userAgent,
+      timestamp: new Date().toISOString(),
     };
 
-    await adminDb.collection('visitorInfoLogs').add({
-      ...visitorLog,
-      timestamp: Timestamp.now(),
-    });
+    await queryDb(
+      'INSERT INTO generic_collections (id, collection_name, data) VALUES (?, ?, ?)',
+      [docId, 'visitorInfoLogs', JSON.stringify(visitorLog)]
+    );
 
     return NextResponse.json({ success: true });
 

@@ -13,13 +13,12 @@ let marketingSettingsCache: MarketingSettings | null = null;
 const getMarketingSettings = async (): Promise<MarketingSettings | null> => {
   if (marketingSettingsCache) return marketingSettingsCache;
   try {
-    const settingsDocRef = doc(db, "webSettings", "marketingConfiguration");
-    const docSnap = await getDoc(settingsDocRef);
-    if (docSnap.exists()) {
-      marketingSettingsCache = docSnap.data() as MarketingSettings;
+    const res = await fetch('/api/db/settings?key=marketingConfiguration');
+    const json = await res.json();
+    if (json.success && json.data) {
+      marketingSettingsCache = json.data as MarketingSettings;
       return marketingSettingsCache;
     }
-    console.warn("FCM Utils: Marketing settings not found in Firestore.");
     return null;
   } catch (error) {
     console.error("FCM Utils: Error fetching marketing settings:", error);

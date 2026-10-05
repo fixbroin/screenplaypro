@@ -5,8 +5,6 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { BarChart, DollarSign, ShoppingBag, Users, Loader2, AlertTriangle, UserPlus, TagIcon, History, HandCoins, Search } from "lucide-react";
-import { db } from '@/lib/firebase';
-import { collection, onSnapshot, query, where, Timestamp, orderBy, limit, getDocs } from "firebase/firestore";
 import type { FirestoreBooking, FirestoreUser, UserActivity, FirestoreService } from '@/types/firestore';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -28,7 +26,7 @@ interface DashboardStats {
 interface ActivityItem {
   id: string;
   type: 'new_booking' | 'new_user_signup';
-  timestamp: Timestamp;
+  timestamp: any;
   title: string;
   description: string;
   icon: React.ReactElement;
@@ -80,123 +78,99 @@ export default function AdminDashboardPage() {
     setIsActivitiesLoading(true);
     setActivitiesError(null);
 
-    const recentBookingsQuery = query(collection(db, "bookings"), orderBy("createdAt", "desc"), limit(5));
-    const recentUsersQuery = query(collection(db, "users"), orderBy("createdAt", "desc"), limit(5));
+    const fetchDashboardActivitiesAndAnalytics = async () => {
+      try {
+        const [bookingsRes, usersRes, servicesRes, activitiesRes] = await Promise.all([
+          fetch('/api/db/collections?name=bookings'),
+          fetch('/api/db/collections?name=users'),
+          fetch('/api/db/collections?name=adminServices'),
+          fetch('/api/db/collections?name=userActivities')
+        ]);
 
-    let fetchedBookingsActivities: ActivityItem[] = [];
-    let fetchedUsersActivities: ActivityItem[] = [];
+        const [bookingsJson, usersJson, servicesJson, activitiesJson] = await Promise.all([
+          bookingsRes.json(),
+          usersRes.json(),
+          servicesRes.json(),
+          activitiesRes.json()
+        ]);
 
-    const combineAndSetActivities = () => {
-        const combined = [...fetchedBookingsActivities, ...fetchedUsersActivities];
-        combined.sort((a, b) => getTimestampMillis(b.timestamp) - getTimestampMillis(a.timestamp));
-        setRecentActivities(combined.slice(0, 7)); // Show top 7 overall recent activities
-        setIsActivitiesLoading(false);
-    };
-    
-    let bookingsLoaded = false;
-    let usersLoaded = false;
+        const bookings: FirestoreBooking[] = bookingsJson.success && Array.isArray(bookingsJson.data) ? bookingsJson.data : [];
+        const users: FirestoreUser[] = usersJson.success && Array.isArray(usersJson.data) ? usersJson.data : [];
+        const services: FirestoreService[] = servicesJson.success && Array.isArray(servicesJson.data) ? servicesJson.data : [];
+        const activities: UserActivity[] = activitiesJson.success && Array.isArray(activitiesJson.data) ? activitiesJson.data : [];
 
-    const unsubscribeRecentBookings = onSnapshot(recentBookingsQuery, (snapshot) => {
-      fetchedBookingsActivities = snapshot.docs.map(docSnap => {
-        const booking = docSnap.data() as FirestoreBooking;
-        return {
-          id: docSnap.id,
+        // 1. Recent Activities
+        const fetchedBookingsActivities: ActivityItem[] = bookings.slice(0, 5).map((booking, idx) => ({
+          id: booking.id || `booking_${idx}`,
           type: 'new_booking',
           timestamp: booking.createdAt,
           title: 'New Booking',
-          description: `Booking ID: ${booking.bookingId.substring(0,12)}... by ${booking.customerName}`,
+          description: `Booking ID: ${(booking.bookingId || booking.id || '').substring(0, 12)}... by ${booking.customerName || 'Customer'}`,
           icon: <TagIcon className="h-5 w-5 text-primary" />,
-          href: `/admin/bookings/edit/${docSnap.id}`,
-        };
-      });
-      bookingsLoaded = true;
-      if (usersLoaded) combineAndSetActivities();
-    }, (err) => {
-      console.error("Error fetching recent bookings:", err);
-      setActivitiesError((prev) => prev ? `${prev} Failed to load recent bookings.` : "Failed to load recent bookings.");
-      bookingsLoaded = true;
-      if (usersLoaded) combineAndSetActivities();
-    });
+          href: `/admin/bookings/edit/${booking.id || ''}`,
+        }));
 
-    const unsubscribeRecentUsers = onSnapshot(recentUsersQuery, (snapshot) => {
-      fetchedUsersActivities = snapshot.docs.map(docSnap => {
-        const user = docSnap.data() as FirestoreUser;
-        return {
-          id: docSnap.id,
+        const fetchedUsersActivities: ActivityItem[] = users.slice(0, 5).map(user => ({
+          id: user.id,
           type: 'new_user_signup',
           timestamp: user.createdAt,
           title: 'New User Signup',
-          description: `${user.displayName || user.email} just joined.`,
+          description: `${user.displayName || user.email || 'New User'} just joined.`,
           icon: <UserPlus className="h-5 w-5 text-accent" />,
           href: `/admin/users`,
-        };
-      });
-      usersLoaded = true;
-      if (bookingsLoaded) combineAndSetActivities();
-    }, (err) => {
-      console.error("Error fetching recent users:", err);
-      setActivitiesError((prev) => prev ? `${prev} Failed to load recent users.` : "Failed to load recent users.");
-      usersLoaded = true;
-      if (bookingsLoaded) combineAndSetActivities();
-    });
+        }));
 
-    // Fetch Analytics Data (Optimized)
-    const fetchAnalytics = async () => {
+        const combined = [...fetchedBookingsActivities, ...fetchedUsersActivities];
+        combined.sort((a, b) => getTimestampMillis(b.timestamp) - getTimestampMillis(a.timestamp));
+        setRecentActivities(combined.slice(0, 7));
+        setIsActivitiesLoading(false);
+
+        // 2. Analytics
         setIsAnalyticsLoading(true);
-        try {
-            // Fetch all services first to get their details (small collection)
-            const servicesSnapshot = await getDocs(collection(db, "adminServices"));
-            const servicesDataMap = new Map(servicesSnapshot.docs.map(doc => [doc.id, { id: doc.id, ...doc.data() } as FirestoreService]));
+        const servicesDataMap = new Map(services.map(s => [s.id, s]));
+        const serviceCounts: { [key: string]: number } = {};
 
-            // Top Services - Limit to recent 200 bookings for trending data instead of ALL history
-            const bookingsQuery = query(collection(db, "bookings"), orderBy("createdAt", "desc"), limit(200));
-            const bookingsSnapshot = await getDocs(bookingsQuery);
-            const serviceCounts: { [key: string]: number } = {};
-            bookingsSnapshot.forEach(doc => {
-                const booking = doc.data() as FirestoreBooking;
-                if (booking.services) {
-                    booking.services.forEach(service => {
-                        serviceCounts[service.serviceId] = (serviceCounts[service.serviceId] || 0) + (service.quantity || 1);
-                    });
-                }
+        bookings.forEach(booking => {
+          if (booking.services) {
+            booking.services.forEach(s => {
+              serviceCounts[s.serviceId] = (serviceCounts[s.serviceId] || 0) + (s.quantity || 1);
             });
+          }
+        });
 
-            const topServices = Object.entries(serviceCounts)
-                .map(([serviceId, count]) => {
-                    const serviceDetails = servicesDataMap.get(serviceId);
-                    return serviceDetails ? { ...serviceDetails, count } : null;
-                })
-                .filter((item): item is FirestoreService & { count: number } => item !== null)
-                .sort((a, b) => b.count - a.count)
-                .slice(0, 10);
+        const topServices = Object.entries(serviceCounts)
+          .map(([serviceId, count]) => {
+            const serviceDetails = servicesDataMap.get(serviceId);
+            return serviceDetails ? { ...serviceDetails, count } : null;
+          })
+          .filter((item): item is FirestoreService & { count: number } => item !== null)
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 10);
 
-            // Top Search Terms (already limited to 500)
-            const searchActivitiesSnapshot = await getDocs(query(collection(db, "userActivities"), where("eventType", "==", "search"), limit(500)));
-            const searchCounts: { [key: string]: number } = {};
-            searchActivitiesSnapshot.forEach(doc => {
-                const activity = doc.data() as UserActivity;
-                const term = activity.eventData?.searchQuery?.toLowerCase().trim();
-                if (term) {
-                    searchCounts[term] = (searchCounts[term] || 0) + 1;
-                }
-            });
-            const topSearchTerms = Object.entries(searchCounts).sort(([, a], [, b]) => b - a).slice(0, 5).map(([term, count]) => ({ term, count }));
+        const searchCounts: { [key: string]: number } = {};
+        activities.filter(a => a.eventType === 'search').forEach(act => {
+          const term = act.eventData?.searchQuery?.toLowerCase().trim();
+          if (term) {
+            searchCounts[term] = (searchCounts[term] || 0) + 1;
+          }
+        });
 
-            setAnalytics({ topServices, topSearchTerms });
+        const topSearchTerms = Object.entries(searchCounts)
+          .sort(([, a], [, b]) => b - a)
+          .slice(0, 5)
+          .map(([term, count]) => ({ term, count }));
 
-        } catch(e) {
-             console.error("Error fetching analytics data:", e);
-        } finally {
-            setIsAnalyticsLoading(false);
-        }
+        setAnalytics({ topServices, topSearchTerms });
+      } catch (err: any) {
+        console.error("Error fetching dashboard data:", err);
+        setActivitiesError("Failed to load recent activity.");
+      } finally {
+        setIsActivitiesLoading(false);
+        setIsAnalyticsLoading(false);
+      }
     };
-    fetchAnalytics();
 
-    return () => {
-      unsubscribeRecentBookings();
-      unsubscribeRecentUsers();
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    fetchDashboardActivitiesAndAnalytics();
   }, []); // Only run once on mount
 
   if (isLoading || isStatsLoading) {

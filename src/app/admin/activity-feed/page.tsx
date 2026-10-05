@@ -9,8 +9,6 @@ import {
   Clock, RefreshCcw, ChevronRight, ExternalLink, ShieldCheck, User
 } from "lucide-react";
 import type { UserActivity, FirestoreUser } from '@/types/firestore';
-import { db } from '@/lib/firebase';
-import { collection, query, orderBy, Timestamp, limit, getDocs, writeBatch, where, documentId, startAfter, type DocumentSnapshot } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from 'date-fns';
 import Link from 'next/link';
@@ -72,8 +70,6 @@ const formatTimestamp = (timestamp?: any): string => {
   return formatDistanceToNow(new Date(millis), { addSuffix: true });
 };
 
-import { onSnapshot } from "firebase/firestore";
-
 export default function AdminActivityFeedPage() {
   const [cachedActivities, setCachedActivities] = useState<UserActivity[]>([]);
   const [liveActivities, setLiveActivities] = useState<UserActivity[]>([]);
@@ -83,72 +79,50 @@ export default function AdminActivityFeedPage() {
   const fetchedUids = useRef<Set<string>>(new Set());
   const { toast } = useToast();
 
-  // 1. Fetch Archived History (Cheap Cache)
-  const loadCachedData = useCallback(async () => {
+  const loadData = useCallback(async () => {
+    setIsLoading(true);
     try {
-      const result = await getArchivedActivities();
-      setCachedActivities(result);
+      const res = await fetch('/api/db/collections?name=userActivities');
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        setLiveActivities(json.data as UserActivity[]);
+      } else {
+        const result = await getArchivedActivities();
+        setCachedActivities(result);
+      }
     } catch (err) {
-      console.error("Error loading activity feed cache:", err);
+      console.error("Error loading activity feed:", err);
     } finally {
       setIsLoading(false);
     }
   }, []);
 
-  // 2. Setup Live Listener (Real-time for ONLY the latest 20 items)
   useEffect(() => {
-    loadCachedData();
-
-    const q = query(collection(db, "userActivities"), orderBy("timestamp", "desc"), limit(20));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const newLive = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      } as UserActivity));
-      setLiveActivities(newLive);
-    }, (error) => {
-      console.error("Live listener error:", error);
-    });
-
-    return () => unsubscribe();
-  }, [loadCachedData]);
+    loadData();
+  }, [loadData]);
 
   const activities = useMemo(() => {
     const combined = [...liveActivities, ...cachedActivities];
-    // Use a Map to ensure unique IDs (live data takes priority)
     const uniqueMap = new Map(combined.map(a => [a.id, a]));
     return Array.from(uniqueMap.values()).sort((a, b) => {
         return getTimestampMillis(b.timestamp) - getTimestampMillis(a.timestamp);
     });
   }, [liveActivities, cachedActivities]);
 
-  // Fetch names for registered users in batch
   useEffect(() => {
     const fetchUserNames = async () => {
-      const uids = Array.from(new Set(activities.map(a => a.userId).filter(Boolean))) as string[];
-      const uidsToFetch = uids.filter(uid => !fetchedUids.current.has(uid));
-      if (uidsToFetch.length === 0) return;
-
-      // Mark as fetched immediately to prevent duplicate requests
-      uidsToFetch.forEach(uid => fetchedUids.current.add(uid));
-
-      const resolvedBatch: Record<string, string> = {};
-      const batchSize = 30;
-      for (let i = 0; i < uidsToFetch.length; i += batchSize) {
-        const batch = uidsToFetch.slice(i, i + batchSize);
-        try {
-          const q = query(collection(db, "users"), where(documentId(), "in", batch));
-          const snap = await getDocs(q);
-          snap.forEach(docSnap => {
-            const userData = docSnap.data();
-            resolvedBatch[docSnap.id] = userData.displayName || userData.fullName || "Registered User";
+      try {
+        const res = await fetch('/api/db/collections?name=users');
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data)) {
+          const resolved: Record<string, string> = {};
+          json.data.forEach((u: any) => {
+            resolved[u.id] = u.displayName || u.fullName || u.email || "Registered User";
           });
-        } catch (err) {
-          console.error("Error fetching user names:", err);
+          setUserNames(resolved);
         }
-      }
-      if (Object.keys(resolvedBatch).length > 0) {
-        setUserNames(current => ({ ...current, ...resolvedBatch }));
+      } catch (err) {
+        console.error("Error fetching user names:", err);
       }
     };
 
@@ -190,44 +164,13 @@ export default function AdminActivityFeedPage() {
   const handleClearAllActivities = async () => {
     setIsClearing(true);
     try {
-      const activitiesCollectionRef = collection(db, "userActivities");
-      const querySnapshot = await getDocs(activitiesCollectionRef);
-      
-      if (querySnapshot.empty) {
-        toast({ title: "No Activities", description: "There are no activities to clear.", variant: "default" });
-        setIsClearing(false);
-        return;
-      }
-
-      const batchArray = [];
-      let currentBatch = writeBatch(db);
-      let currentBatchSize = 0;
-
-      querySnapshot.docs.forEach((doc) => {
-        currentBatch.delete(doc.ref);
-        currentBatchSize++;
-        if (currentBatchSize === 500) { 
-          batchArray.push(currentBatch);
-          currentBatch = writeBatch(db);
-          currentBatchSize = 0;
-        }
-      });
-
-      if (currentBatchSize > 0) {
-        batchArray.push(currentBatch);
-      }
-
-      for (const batch of batchArray) {
-        await batch.commit();
-      }
-      
-      // SmartSync: Clear the server-side cache with the correct tag
+      await fetch('/api/db/collections?name=userActivities&clearAll=true', { method: 'DELETE' });
       await triggerRefresh('activities');
       await triggerRefresh('admin-stats');
       
       setLiveActivities([]);
       setCachedActivities([]);
-      toast({ title: "Activities Cleared", description: "All user activities have been cleared." });
+      toast({ title: "Activities Cleared", description: "All user activities have been cleared from MySQL." });
     } catch (error) {
       console.error("Error clearing activities: ", error);
       toast({ title: "Error Clearing Activities", description: (error as Error).message || "Could not clear all activities.", variant: "destructive" });
@@ -404,7 +347,7 @@ export default function AdminActivityFeedPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-4 bg-card border shadow-sm p-2 rounded-2xl">
-          <Button variant="outline" size="sm" className="h-10 rounded-xl font-bold text-xs" onClick={() => loadCachedData()} disabled={isLoading}>
+          <Button variant="outline" size="sm" className="h-10 rounded-xl font-bold text-xs" onClick={() => loadData()} disabled={isLoading}>
             <RefreshCcw className={cn("mr-2 h-4 w-4", isLoading && "animate-spin")} />
             Sync Now
           </Button>

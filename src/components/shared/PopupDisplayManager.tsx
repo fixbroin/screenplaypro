@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -6,23 +5,18 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import AppImage from '@/components/ui/AppImage';
-import { XIcon, Mail, Loader2, User, Phone,CheckCircle } from 'lucide-react'; 
-import { db } from '@/lib/firebase';
-import { collection, query, where, orderBy, getDocs, addDoc, Timestamp, limit } from 'firebase/firestore'; 
-import type { FirestorePopup, PopupDisplayFrequency, InquirySource, InquiryStatus, FirestorePopupInquiry, FirestoreNotification } from '@/types/firestore'; 
+import { XIcon, Mail, Loader2, CheckCircle } from 'lucide-react'; 
+import type { FirestorePopup, PopupDisplayFrequency, InquirySource, FirestorePopupInquiry } from '@/types/firestore'; 
 import { usePathname, useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth'; 
-import { getGuestId } from '@/lib/guestIdManager'; 
 import { useLoading } from '@/contexts/LoadingContext';
 import { useApplicationConfig } from '@/hooks/useApplicationConfig';
-import { triggerPushNotification } from '@/lib/fcmUtils';
-import { ADMIN_EMAIL } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 
 const POPUP_SESSION_STORAGE_KEY_PREFIX = 'screenplayproPopupShown_';
 const POPUP_DAY_STORAGE_KEY_PREFIX = 'screenplayproPopupDayShown_'; 
-const NEWSLETTER_SUBMITTED_KEY = 'screenplaypro_newsletter_submitted'; // Key for permanent submission tracking
+const NEWSLETTER_SUBMITTED_KEY = 'screenplaypro_newsletter_submitted';
 
 export default function PopupDisplayManager() {
   const [allActivePopups, setAllActivePopups] = useState<FirestorePopup[]>([]);
@@ -39,7 +33,7 @@ export default function PopupDisplayManager() {
   const { user, triggerAuthRedirect } = useAuth();
   const { showLoading } = useLoading();
   const [showPromoCode, setShowPromoCode] = useState(false);
-  const [isSubmittedSuccessfully, setIsSubmittedSuccessfully] = useState(false); // New state
+  const [isSubmittedSuccessfully, setIsSubmittedSuccessfully] = useState(false);
   const { config: appConfig } = useApplicationConfig();
   const countryCode = appConfig?.defaultOtpCountryCode || '+91';
   const [isInputFocused, setIsInputFocused] = useState(false);
@@ -54,7 +48,6 @@ export default function PopupDisplayManager() {
 
     const handleVisualViewportResize = () => {
       if (!window.visualViewport) return;
-      // If the height is significantly smaller than the screen height, keyboard is probably open
       const isKeyboardOpen = window.visualViewport.height < window.innerHeight * 0.85;
       setIsInputFocused(isKeyboardOpen);
     };
@@ -113,18 +106,14 @@ export default function PopupDisplayManager() {
     if (isFormPopup) {
       try {
         if (localStorage.getItem(NEWSLETTER_SUBMITTED_KEY) === 'true') {
-          console.log(`PopupDisplayManager: Skipping form popup "${popup.name}" because user has already submitted.`);
           return;
         }
-      } catch (e) {
-        console.warn("Could not read from localStorage to check submission status.");
-      }
+      } catch (e) {}
     }
 
     if (popupShownThisLoadRef.current) return;
 
     if (checkFrequency(popup.id, popup.displayFrequency)) {
-      console.log(`PopupDisplayManager: Activating popup "${popup.name}" (Rule: ${popup.displayRuleType})`);
       setCurrentPopupToDisplay(popup);
       setIsPopupVisible(true);
       markAsShown(popup.id, popup.displayFrequency);
@@ -140,11 +129,8 @@ export default function PopupDisplayManager() {
       }
       timerRefs.current.forEach(clearTimeout);
       timerRefs.current = [];
-    } else {
-      console.log(`PopupDisplayManager: Frequency check failed for popup "${popup.name}"`);
     }
   }, [checkFrequency, markAsShown]);
-
 
   useEffect(() => {
     const fetchPopupsAndSetupTriggers = async () => {
@@ -152,19 +138,14 @@ export default function PopupDisplayManager() {
       popupShownThisLoadRef.current = false;
 
       try {
-        const popupsCollectionRef = collection(db, "adminPopups");
-        const q = query(popupsCollectionRef, where("isActive", "==", true), orderBy("createdAt", "desc"));
-        const querySnapshot = await getDocs(q);
-        const fetchedPopups = querySnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as FirestorePopup));
+        const res = await fetch('/api/db/collections?name=adminPopups');
+        const data = await res.json();
+        const fetchedPopups: FirestorePopup[] = (data.success && Array.isArray(data.data)) ? data.data.filter((p: any) => p.isActive) : [];
         
-        // Filter based on targetPages configuration and current pathname
         const targetablePopups = fetchedPopups.filter(popup => {
             const targets = popup.targetPages || [];
-            // If empty, default to homepage only (legacy behavior)
             if (targets.length === 0) return pathname === '/';
-            // If contains wildcard, show everywhere
             if (targets.includes('*')) return true;
-            // Otherwise, check if current path is in targets
             return targets.includes(pathname);
         });
 
@@ -208,52 +189,9 @@ export default function PopupDisplayManager() {
           window.addEventListener('scroll', handleScroll, { passive: true });
           scrollListenerRef.current = () => window.removeEventListener('scroll', handleScroll);
         }
-        if (popupShownThisLoadRef.current) { setIsLoadingPopups(false); return; }
-
-        const exitIntentPopup = targetablePopups.find(p => p.displayRuleType === 'on_exit_intent');
-        if (exitIntentPopup && !popupShownThisLoadRef.current && checkFrequency(exitIntentPopup.id, exitIntentPopup.displayFrequency)) {
-          const isDesktop = window.innerWidth >= 768;
-
-          if (isDesktop) {
-            const handleDesktopMouseOut = (e: MouseEvent) => {
-              if (popupShownThisLoadRef.current) {
-                document.documentElement.removeEventListener('mouseout', handleDesktopMouseOut);
-                return;
-              }
-              if (e.clientY <= 0) {
-                activatePopup(exitIntentPopup);
-                document.documentElement.removeEventListener('mouseout', handleDesktopMouseOut);
-              }
-            };
-            document.documentElement.addEventListener('mouseout', handleDesktopMouseOut);
-            exitIntentListenerRef.current = () => document.documentElement.removeEventListener('mouseout', handleDesktopMouseOut);
-          } else { 
-            const mobileExitIntentStateKey = 'screenplayproMobileExitIntentMarker';
-            let statePushedByManager = false;
-            const pushOurState = () => {
-                if (history.state?.[mobileExitIntentStateKey] !== true) {
-                    history.pushState({ [mobileExitIntentStateKey]: true }, "");
-                    statePushedByManager = true;
-                }
-            };
-            pushOurState(); 
-            const handleMobilePopState = (event: PopStateEvent) => {
-              if (event.state?.[mobileExitIntentStateKey] !== true && !popupShownThisLoadRef.current) {
-                activatePopup(exitIntentPopup);
-              }
-              window.removeEventListener('popstate', handleMobilePopState);
-              exitIntentListenerRef.current = null; 
-            };
-            window.addEventListener('popstate', handleMobilePopState);
-            exitIntentListenerRef.current = () => {
-              window.removeEventListener('popstate', handleMobilePopState);
-            };
-          }
-        }
 
       } catch (error) {
         console.error("Error fetching or setting up popups:", error);
-        toast({ title: "Popup System Error", description: "Could not initialize popups.", variant: "destructive" });
       } finally {
         setIsLoadingPopups(false);
       }
@@ -273,8 +211,7 @@ export default function PopupDisplayManager() {
       timerRefs.current.forEach(clearTimeout);
       timerRefs.current = [];
     };
-  }, [pathname, toast, activatePopup, checkFrequency]);
-
+  }, [pathname, activatePopup, checkFrequency]);
 
   const handlePopupClose = () => {
     setIsPopupVisible(false);
@@ -330,10 +267,7 @@ export default function PopupDisplayManager() {
         }
     }
 
-    if (!currentPopupToDisplay) {
-        toast({ title: "Error", description: "Popup data missing.", variant: "destructive"});
-        return;
-    }
+    if (!currentPopupToDisplay) return;
     setIsSubscribing(true);
     
     let inquirySource: InquirySource = 'other_popup';
@@ -348,7 +282,6 @@ export default function PopupDisplayManager() {
         capturedFormData.mobile = `${countryCode}${mobileForSubscription}`;
     }
 
-
     const popupInquiryData: Omit<FirestorePopupInquiry, 'id'> = {
         popupId: currentPopupToDisplay.id,
         popupName: currentPopupToDisplay.name,
@@ -356,52 +289,29 @@ export default function PopupDisplayManager() {
         email: (currentPopupToDisplay.showEmailInput && emailForSubscription) ? emailForSubscription : undefined,
         name: (currentPopupToDisplay.showNameInput && nameForSubscription) ? nameForSubscription : (user?.displayName || undefined),
         phone: (currentPopupToDisplay.showMobileInput && mobileForSubscription) ? `${countryCode}${mobileForSubscription}` : undefined,
-        submittedAt: Timestamp.now(),
-        status: 'new' as InquiryStatus,
+        submittedAt: new Date().toISOString() as any,
+        status: 'new',
         source: inquirySource,
         formData: capturedFormData,
     };
 
     try {
-        const docRef = await addDoc(collection(db, "popupSubmissions"), popupInquiryData);
+        await fetch('/api/db/collections', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            collectionName: 'popupSubmissions',
+            data: popupInquiryData
+          })
+        });
 
-        // --- ADMIN NOTIFICATION FOR NEW POPUP INQUIRY ---
-        try {
-          const adminQuery = query(collection(db, "users"), where("email", "==", ADMIN_EMAIL), limit(1));
-          const adminSnapshot = await getDocs(adminQuery);
-          if (!adminSnapshot.empty) {
-            const adminId = adminSnapshot.docs[0].id;
-            const adminNotification: Omit<FirestoreNotification, 'id'> = {
-              userId: adminId,
-              title: "New Popup Submission",
-              message: `From: ${popupInquiryData.name || popupInquiryData.email || "Unknown"} (Source: ${popupInquiryData.popupName})`,
-              type: "info",
-              href: `/admin/inquiries`,
-              read: false,
-              createdAt: Timestamp.now(),
-            };
-            await addDoc(collection(db, "userNotifications"), adminNotification);
-            triggerPushNotification({
-              userId: adminId,
-              title: adminNotification.title,
-              body: adminNotification.message,
-              href: adminNotification.href
-            }).catch(err => console.error("Error sending admin popup push:", err));
-          }
-        } catch (notifyErr) {
-          console.error("Error sending admin popup notifications:", notifyErr);
-        }
-        // --- END ADMIN NOTIFICATION ---
-
-        setIsSubmittedSuccessfully(true); // Mark as successful
+        setIsSubmittedSuccessfully(true);
         toast({ title: "Submitted!", description: `Thank you for your submission.`, className:"bg-green-100 text-green-700 border-green-300" });
         
         if (['newsletter_signup', 'lead_capture', 'subscribe'].includes(currentPopupToDisplay?.popupType)) {
            try {
              localStorage.setItem(NEWSLETTER_SUBMITTED_KEY, 'true');
-           } catch (e) {
-             console.warn("Could not write submission status to localStorage.");
-           }
+           } catch (e) {}
         }
         
         setEmailForSubscription(''); 
@@ -409,7 +319,6 @@ export default function PopupDisplayManager() {
         setMobileForSubscription('');
         
         if (currentPopupToDisplay?.targetUrl) {
-            // If there's a promo code, give them more time to see/copy it
             const delay = currentPopupToDisplay.promoCode ? 3000 : 1500;
             setTimeout(() => {
                  if (currentPopupToDisplay.targetUrl!.startsWith('http')) {
@@ -425,7 +334,6 @@ export default function PopupDisplayManager() {
                  handlePopupClose();
             }, delay);
         } else if (!currentPopupToDisplay.promoCode) {
-            // Only close automatically if there's no promo code to show
             setTimeout(() => {
                 handlePopupClose();
             }, 2000);
@@ -445,13 +353,9 @@ export default function PopupDisplayManager() {
       });
     }, (err) => {
       console.error('Could not copy text: ', err);
-      toast({
-        title: "Copy Failed",
-        description: "Could not copy code. Please try again.",
-        variant: "destructive"
-      });
     });
   };
+
   const getVideoEmbedUrl = (url: string): string => {
     let videoId;
     if (url.includes("youtube.com/watch?v=")) {
@@ -473,7 +377,6 @@ export default function PopupDisplayManager() {
 
   useEffect(() => {
     if (currentPopupToDisplay?.promoCode) {
-        // If there are input fields, only show promo code AFTER submission
         const hasInputs = currentPopupToDisplay.showNameInput || currentPopupToDisplay.showEmailInput || currentPopupToDisplay.showMobileInput;
         
         if (hasInputs) {
@@ -513,7 +416,6 @@ export default function PopupDisplayManager() {
         setShowPromoCode(false);
     }
   }, [currentPopupToDisplay, nameForSubscription, emailForSubscription, mobileForSubscription, isSubmittedSuccessfully]);
-
 
   if (isLoadingPopups || !currentPopupToDisplay || !isPopupVisible) {
     return null;

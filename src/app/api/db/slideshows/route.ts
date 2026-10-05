@@ -8,9 +8,14 @@ export async function GET() {
       id: r.id,
       title: r.title || '',
       subtitle: r.subtitle || '',
+      description: r.subtitle || '',
       imageUrl: r.imageUrl,
+      imageHint: r.imageHint || '',
       ctaText: r.ctaText || '',
+      buttonText: r.ctaText || '',
       ctaLink: r.ctaLink || '',
+      buttonLinkValue: r.ctaLink || '',
+      buttonLinkType: r.buttonLinkType || (r.ctaLink && !r.ctaLink.startsWith('http') && !r.ctaLink.startsWith('/') ? 'category' : 'url'),
       order: Number(r.order || 0),
       isActive: Boolean(r.isActive),
       createdAt: r.createdAt,
@@ -26,29 +31,39 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { id, title, subtitle, imageUrl, ctaText, ctaLink, order, isActive } = body;
+    const { id, title, subtitle, description, imageUrl, imageHint, ctaText, buttonText, ctaLink, buttonLinkValue, buttonLinkType, order, isActive } = body;
 
     const slideId = id || `slide_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const finalTitle = title || '';
+    const finalSubtitle = subtitle || description || '';
+    const finalCtaText = ctaText || buttonText || '';
+    const finalCtaLink = ctaLink || buttonLinkValue || '';
+    const finalLinkType = buttonLinkType || 'url';
+    const finalImageHint = imageHint || '';
 
     await queryDb(
-      `INSERT INTO slideshows (id, title, subtitle, imageUrl, ctaText, ctaLink, \`order\`, isActive, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+      `INSERT INTO slideshows (id, title, subtitle, imageUrl, imageHint, ctaText, ctaLink, buttonLinkType, \`order\`, isActive, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
        ON DUPLICATE KEY UPDATE
          title = VALUES(title),
          subtitle = VALUES(subtitle),
          imageUrl = VALUES(imageUrl),
+         imageHint = VALUES(imageHint),
          ctaText = VALUES(ctaText),
          ctaLink = VALUES(ctaLink),
+         buttonLinkType = VALUES(buttonLinkType),
          \`order\` = VALUES(\`order\`),
          isActive = VALUES(isActive),
          updatedAt = NOW()`,
       [
         slideId,
-        title || '',
-        subtitle || '',
+        finalTitle,
+        finalSubtitle,
         imageUrl || '',
-        ctaText || '',
-        ctaLink || '',
+        finalImageHint,
+        finalCtaText,
+        finalCtaLink,
+        finalLinkType,
         Number(order || 0),
         isActive ? 1 : 0
       ]

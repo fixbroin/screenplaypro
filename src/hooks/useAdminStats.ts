@@ -2,8 +2,6 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { doc, onSnapshot } from "firebase/firestore";
-import { db } from '@/lib/firebase';
 
 export interface AdminStats {
   completedRevenue: number;
@@ -26,28 +24,28 @@ export function useAdminStats() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const statsDocRef = doc(db, "appConfiguration", "stats");
+    Promise.all([
+      fetch('/api/db/users').then(r => r.json()).catch(() => null),
+      fetch('/api/db/scripts').then(r => r.json()).catch(() => null),
+      fetch('/api/db/subscribers').then(r => r.json()).catch(() => null)
+    ]).then(([usersRes, scriptsRes, subRes]) => {
+      const activeUsers = usersRes?.success && Array.isArray(usersRes.users) ? usersRes.users.length : 0;
+      const totalBookings = scriptsRes?.success && Array.isArray(scriptsRes.scripts) ? scriptsRes.scripts.length : 0;
+      const subscribers = subRes?.success && Array.isArray(subRes.subscribers) ? subRes.subscribers : [];
+      const completedRevenue = subscribers.reduce((acc: number, item: any) => acc + (Number(item.amount) || 0), 0);
 
-    const unsubscribe = onSnapshot(statsDocRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setStats({
-          completedRevenue: data.totalRevenue || 0,
-          totalBookings: data.totalBookings || 0,
-          activeUsers: data.totalUsers || 0,
-          newSignups30d: data.newSignups30d || 0,
-          earnedCommission: data.earnedCommission || 0,
-          updatedAt: data.updatedAt,
-        });
-      }
+      setStats({
+        completedRevenue,
+        totalBookings,
+        activeUsers,
+        newSignups30d: activeUsers,
+        earnedCommission: completedRevenue * 0.1,
+      });
       setIsLoading(false);
-    }, (err) => {
-      console.error("Error fetching admin stats:", err);
-      setError("Failed to load statistics.");
+    }).catch(err => {
+      console.error("Error fetching admin stats from MySQL:", err);
       setIsLoading(false);
     });
-
-    return () => unsubscribe();
   }, []);
 
   return { stats, isLoading, error };

@@ -1,8 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { doc, getDoc, onSnapshot } from "firebase/firestore";
-import { db } from '@/lib/firebase';
 import type { FeaturesConfiguration, MarketingAutomationSettings } from '@/types/firestore';
 import { getCache, setCache } from '@/lib/client-cache';
 
@@ -59,42 +57,25 @@ export function useFeaturesConfig(): UseFeaturesAndAutomationConfigReturn {
       return;
     }
 
-    const featuresDocRef = doc(db, FEATURES_CONFIG_COLLECTION, FEATURES_CONFIG_DOC_ID);
-    const marketingDocRef = doc(db, FEATURES_CONFIG_COLLECTION, MARKETING_AUTOMATION_DOC_ID);
-
-    // Real-time synchronization for features
-    const unsubscribeFeatures = onSnapshot(featuresDocRef, (snap) => {
-      const freshFeatures = snap.exists() 
-        ? { ...defaultFeaturesConfig, ...snap.data() } as FeaturesConfiguration 
+    Promise.all([
+      fetch('/api/db/settings?key=featuresConfiguration').then(r => r.json()).catch(() => null),
+      fetch('/api/db/settings?key=marketingAutomation').then(r => r.json()).catch(() => null)
+    ]).then(([featRes, mktRes]) => {
+      const freshFeatures = (featRes && featRes.success && featRes.data)
+        ? { ...defaultFeaturesConfig, ...featRes.data }
         : defaultFeaturesConfig;
-      setFeaturesConfig(freshFeatures);
-      
-      // Update cache
-      const currentMarketing = getCache<{features: FeaturesConfiguration, marketing: MarketingAutomationSettings | null}>(CACHE_KEY, true)?.marketing || null;
-      setCache(CACHE_KEY, { features: freshFeatures, marketing: currentMarketing }, true);
-      setIsLoading(false);
-    }, (error) => {
-      console.error("Error with features onSnapshot:", error);
-    });
-
-    // Real-time synchronization for marketing
-    const unsubscribeMarketing = onSnapshot(marketingDocRef, (snap) => {
-      const freshMarketing = snap.exists() 
-        ? snap.data() as MarketingAutomationSettings 
+      const freshMarketing = (mktRes && mktRes.success && mktRes.data)
+        ? mktRes.data
         : null;
+
+      setFeaturesConfig(freshFeatures);
       setMarketingConfig(freshMarketing);
-
-      // Update cache
-      const currentFeatures = getCache<{features: FeaturesConfiguration, marketing: MarketingAutomationSettings | null}>(CACHE_KEY, true)?.features || defaultFeaturesConfig;
-      setCache(CACHE_KEY, { features: currentFeatures, marketing: freshMarketing }, true);
-    }, (error) => {
-      console.error("Error with marketing onSnapshot:", error);
+      setCache(CACHE_KEY, { features: freshFeatures, marketing: freshMarketing }, true);
+      setIsLoading(false);
+    }).catch(err => {
+      console.error("Error fetching features/marketing config from MySQL:", err);
+      setIsLoading(false);
     });
-
-    return () => {
-      unsubscribeFeatures();
-      unsubscribeMarketing();
-    };
   }, []);
 
   return { featuresConfig, config: featuresConfig, marketingConfig, isLoading };

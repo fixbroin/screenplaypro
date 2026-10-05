@@ -10,8 +10,6 @@ import { Switch } from "@/components/ui/switch";
 import { PlusCircle, Edit, Trash2, Loader2, Percent, CheckCircle, XCircle, CalendarDays, EyeOff, Eye } from "lucide-react";
 import type { FirestorePromoCode, DiscountType } from '@/types/firestore';
 import PromoCodeForm, { type PromoCodeFormData } from '@/components/admin/PromoCodeForm';
-import { db } from '@/lib/firebase';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, orderBy, query, Timestamp, where, runTransaction } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { getTimestampMillis } from '@/lib/utils';
@@ -24,18 +22,16 @@ export default function AdminPromoCodesPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
 
-  const promoCodesCollectionRef = collection(db, "adminPromoCodes");
-
   const fetchPromoCodes = async () => {
     setIsLoading(true);
     try {
-      const q = query(promoCodesCollectionRef, orderBy("createdAt", "desc"));
-      const data = await getDocs(q);
-      const fetchedCodes = data.docs.map((doc) => ({ ...doc.data(), id: doc.id } as FirestorePromoCode));
-      setPromoCodes(fetchedCodes);
+      const res = await fetch('/api/db/collections?name=adminPromoCodes');
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        setPromoCodes(json.data as FirestorePromoCode[]);
+      }
     } catch (error) {
-      console.error("Error fetching promo codes: ", error);
-      toast({ title: "Error", description: "Could not fetch promo codes.", variant: "destructive" });
+      console.error("Error fetching promo codes from MySQL: ", error);
     } finally {
       setIsLoading(false);
     }
@@ -43,7 +39,6 @@ export default function AdminPromoCodesPage() {
 
   useEffect(() => {
     fetchPromoCodes();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleAddPromoCode = () => {
@@ -59,9 +54,9 @@ export default function AdminPromoCodesPage() {
   const handleDeletePromoCode = async (codeId: string) => {
     setIsSubmitting(true);
     try {
-      await deleteDoc(doc(db, "adminPromoCodes", codeId));
+      await fetch(`/api/db/collections?name=adminPromoCodes&id=${codeId}`, { method: 'DELETE' });
       setPromoCodes(promoCodes.filter(pc => pc.id !== codeId));
-      toast({ title: "Success", description: "Promo code deleted successfully." });
+      toast({ title: "Success", description: "Promo code deleted from MySQL successfully." });
     } catch (error) {
       console.error("Error deleting promo code: ", error);
       toast({ title: "Error", description: "Could not delete promo code.", variant: "destructive" });
@@ -73,32 +68,28 @@ export default function AdminPromoCodesPage() {
   const handleToggleActive = async (code: FirestorePromoCode) => {
     setIsSubmitting(true);
     try {
-      const codeDocRef = doc(db, "adminPromoCodes", code.id);
-      await updateDoc(codeDocRef, { isActive: !code.isActive, updatedAt: Timestamp.now() });
+      const updated = { ...code, isActive: !code.isActive, updatedAt: new Date().toISOString() };
+      await fetch('/api/db/collections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ collectionName: 'adminPromoCodes', id: code.id, data: updated })
+      });
       fetchPromoCodes(); 
       toast({ title: "Status Updated", description: `Promo code ${code.code} ${!code.isActive ? "activated" : "deactivated"}.`});
     } catch (error) {
-        console.error("Error toggling promo code status:", error);
-        toast({ title: "Error", description: "Could not update promo code status.", variant: "destructive" });
+      console.error("Error toggling promo code status:", error);
+      toast({ title: "Error", description: "Could not update promo code status.", variant: "destructive" });
     } finally {
-        setIsSubmitting(false);
+      setIsSubmitting(false);
     }
   };
 
   const handleFormSubmit = async (data: PromoCodeFormData & { id?: string }) => {
     setIsSubmitting(true);
     
-    const codeExistsQuery = query(promoCodesCollectionRef, where("code", "==", data.code.toUpperCase()));
-    const existingCodesSnapshot = await getDocs(codeExistsQuery);
-    const isCodeDuplicate = !existingCodesSnapshot.empty && (!data.id || existingCodesSnapshot.docs[0].id !== data.id);
-
-    if (isCodeDuplicate) {
-      toast({ title: "Duplicate Code", description: `Promo code "${data.code.toUpperCase()}" already exists. Please use a unique code.`, variant: "destructive" });
-      setIsSubmitting(false);
-      return;
-    }
-
-    const payload: Omit<FirestorePromoCode, 'id' | 'createdAt' | 'updatedAt' | 'usesCount'> & { updatedAt?: Timestamp, createdAt?: Timestamp, usesCount?: number } = {
+    const docId = data.id || `promo_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const fullData = {
+      id: docId,
       code: data.code.toUpperCase(),
       description: data.description,
       discountType: data.discountType,
@@ -106,24 +97,23 @@ export default function AdminPromoCodesPage() {
       minBookingAmount: data.minBookingAmount ? Number(data.minBookingAmount) : undefined,
       maxUses: data.maxUses ? Number(data.maxUses) : undefined,
       maxUsesPerUser: data.maxUsesPerUser ? Number(data.maxUsesPerUser) : undefined,
-      validFrom: data.validFrom ? Timestamp.fromDate(new Date(data.validFrom)) : undefined,
-      validUntil: data.validUntil ? Timestamp.fromDate(new Date(data.validUntil)) : undefined,
+      validFrom: data.validFrom ? new Date(data.validFrom).toISOString() : undefined,
+      validUntil: data.validUntil ? new Date(data.validUntil).toISOString() : undefined,
       isActive: data.isActive === undefined ? true : data.isActive,
       isHidden: data.isHidden,
+      usesCount: editingPromoCode?.usesCount || 0,
+      updatedAt: new Date().toISOString(),
+      ...(data.id ? {} : { createdAt: new Date().toISOString() })
     };
 
     try {
-      if (data.id) { 
-        const promoCodeDoc = doc(db, "adminPromoCodes", data.id);
-        payload.updatedAt = Timestamp.now();
-        await updateDoc(promoCodeDoc, payload);
-        toast({ title: "Success", description: "Promo code updated successfully." });
-      } else { 
-        payload.createdAt = Timestamp.now();
-        payload.usesCount = 0; 
-        await addDoc(promoCodesCollectionRef, payload);
-        toast({ title: "Success", description: "Promo code added successfully." });
-      }
+      await fetch('/api/db/collections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ collectionName: 'adminPromoCodes', id: docId, data: fullData })
+      });
+
+      toast({ title: "Success", description: data.id ? "Promo code updated in MySQL." : "Promo code added to MySQL." });
       setIsFormOpen(false);
       setEditingPromoCode(null);
       await fetchPromoCodes(); 

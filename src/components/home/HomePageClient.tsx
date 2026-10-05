@@ -6,19 +6,16 @@ import { Button } from '@/components/ui/button';
 import { useApplicationConfig } from '@/hooks/useApplicationConfig';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/hooks/useAuth';
-import { useRouter, usePathname } from 'next/navigation';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import JsonLdScript from '@/components/shared/JsonLdScript';
-import { doc, onSnapshot } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
-import type { GlobalWebSettings, FirestoreSEOSettings, FeaturesConfiguration, HomepageAd, AdPlacement } from '@/types/firestore';
+import type { FirestoreSEOSettings, FeaturesConfiguration, HomepageAd, AdPlacement } from '@/types/firestore';
 import Breadcrumbs from '@/components/shared/Breadcrumbs';
 import type { BreadcrumbItem } from '@/types/ui';
 import { useLoading } from '@/contexts/LoadingContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { Sparkles, FileText, Languages, Download, Cloud, PenTool, CheckCircle2, Star, ArrowRight, ShieldCheck, Zap, Laptop } from 'lucide-react';
+import { Sparkles, Languages, Download, Cloud, PenTool, ShieldCheck, ArrowRight } from 'lucide-react';
 import AdBannerCard from '@/components/shared/AdBannerCard';
 import { getCache, setCache } from '@/lib/client-cache';
 import * as React from "react";
@@ -36,7 +33,6 @@ const isBot = (): boolean => {
   return botPatterns.some(pattern => ua.includes(pattern));
 };
 
-// Lazy load components
 const HeroCarousel = dynamic(() => import('@/components/home/HeroCarousel').then((mod) => mod.HeroCarousel), {
   loading: () => <Skeleton className="h-[180px] sm:h-[250px] md:h-[300px] lg:h-[400px] xl:h-[450px] w-full rounded-lg" />,
 });
@@ -96,9 +92,6 @@ const SectionHeader: React.FC<{
   );
 };
 
-const FEATURES_CONFIG_COLLECTION = "webSettings";
-const FEATURES_CONFIG_DOC_ID = "featuresConfiguration";
-
 const defaultFeaturesConfig: FeaturesConfiguration = {
   showMostPopularServices: true,
   showRecentlyAddedServices: true,
@@ -133,39 +126,29 @@ export default function HomePageClient({ citySlug, areaSlug, breadcrumbItems, in
   
   const [isLoadingPageData, setIsLoadingPageData] = useState(() => !initialData && !getCache('pageH1', true));
 
-  const setupRealtimeListeners = useCallback(() => {
-    if (isVisitorBot.current) {
-      return () => {};
-    }
-
-    const configDocRef = doc(db, FEATURES_CONFIG_COLLECTION, FEATURES_CONFIG_DOC_ID);
-    const unsubscribeConfig = onSnapshot(configDocRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const config = { ...defaultFeaturesConfig, ...(docSnap.data() as Partial<FeaturesConfiguration>) };
-        setFeaturesConfig(config);
-        setCache('featuresConfig', config, true);
-        setActiveAds((config.ads || []).filter(ad => ad.isActive).sort((a, b) => a.order - b.order));
-      }
-    }, (error) => console.error("Error listening to features config:", error));
-
-    return () => {
-      unsubscribeConfig();
-    };
-  }, []);
-
   useEffect(() => {
     setIsMounted(true);
     if (initialData) {
       setCache('featuresConfig', initialData.featuresConfig, true);
       setCache('seoSettings', initialData.seoSettings, true);
     }
+
+    if (!isVisitorBot.current) {
+      fetch('/api/db/settings?key=featuresConfiguration')
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success && data.data) {
+            const config = { ...defaultFeaturesConfig, ...data.data };
+            setFeaturesConfig(config);
+            setCache('featuresConfig', config, true);
+            setActiveAds((config.ads || []).filter((ad: any) => ad.isActive).sort((a: any, b: any) => a.order - b.order));
+          }
+        })
+        .catch((err) => console.error("Error fetching features config from MySQL:", err));
+    }
     
     setIsLoadingPageData(false);
-    const cleanupListeners = setupRealtimeListeners();
-    return () => {
-      if (cleanupListeners) cleanupListeners();
-    };
-  }, [initialData, setupRealtimeListeners]);
+  }, [initialData]);
 
   const handleStartWriting = useCallback(() => {
     showLoading();
@@ -173,7 +156,6 @@ export default function HomePageClient({ citySlug, areaSlug, breadcrumbItems, in
   }, [router, showLoading]);
 
   const displayHeroCarousel = !isLoadingAppSettings && (appConfig.enableHeroCarousel ?? true);
-  const finalH1 = pageH1 || initialH1Title || "Professional Screenplay Writing Platform";
 
   const renderAdsByPlacement = (placement: AdPlacement) => {
     const adsForPlacement = activeAds.filter(ad => ad.placement === placement);
@@ -243,7 +225,6 @@ export default function HomePageClient({ citySlug, areaSlug, breadcrumbItems, in
           </div>
         )}
 
-        {/* HERO SLIDESHOW */}
         {displayHeroCarousel && (
           <section className="py-4 md:py-6">
             <div className="container mx-auto px-4 overflow-hidden">
@@ -254,7 +235,6 @@ export default function HomePageClient({ citySlug, areaSlug, breadcrumbItems, in
 
         {renderAdsByPlacement('AFTER_HERO_CAROUSEL')}
 
-        {/* SCREENPLAY PRO INTRO HERO */}
         <section className="py-12 md:py-20 bg-gradient-to-b from-primary/5 via-background to-background border-b border-border/40">
           <div className="container mx-auto px-4 text-center max-w-4xl">
             <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/10 text-primary text-xs font-bold uppercase tracking-wider mb-6">
@@ -277,7 +257,6 @@ export default function HomePageClient({ citySlug, areaSlug, breadcrumbItems, in
           </div>
         </section>
 
-        {/* SCREENPLAY EDITOR PREVIEW MOCKUP */}
         <section className="py-12 md:py-16">
           <div className="container mx-auto px-4 max-w-4xl">
             <div className="bg-card border border-border rounded-3xl p-6 md:p-10 shadow-xl">
@@ -311,7 +290,6 @@ export default function HomePageClient({ citySlug, areaSlug, breadcrumbItems, in
 
         {renderAdsByPlacement('AFTER_CATEGORY_SECTIONS')}
 
-        {/* FEATURES GRID */}
         <LazySection>
           <section className="py-12 md:py-16 bg-secondary/20">
             <div className="container mx-auto px-4">
@@ -340,7 +318,6 @@ export default function HomePageClient({ citySlug, areaSlug, breadcrumbItems, in
           </section>
         </LazySection>
 
-        {/* WHY CHOOSE US & TESTIMONIALS */}
         <LazySection>
           <section className="py-12 md:py-16">
             <div className="container mx-auto px-4">
@@ -367,7 +344,6 @@ export default function HomePageClient({ citySlug, areaSlug, breadcrumbItems, in
         
         {renderAdsByPlacement('BEFORE_FOOTER_CTA')}
 
-        {/* CALL TO ACTION */}
         <section className="py-14 md:py-20 text-center bg-primary text-primary-foreground">
           <div className="container mx-auto px-4 max-w-3xl">
             <h2 className="text-3xl md:text-5xl font-headline font-black mb-6 tracking-tight">

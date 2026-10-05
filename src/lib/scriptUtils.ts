@@ -1,23 +1,5 @@
-import { 
-  collection, 
-  doc, 
-  addDoc, 
-  updateDoc, 
-  getDoc, 
-  getDocs, 
-  query, 
-  where, 
-  orderBy, 
-  serverTimestamp,
-  deleteDoc,
-  setDoc,
-  onSnapshot
-} from "firebase/firestore";
-import { db } from "./firebase";
 import { Script, ScriptElement, ScriptElementType } from "../types/script";
 import { nanoid } from "nanoid";
-
-const SCRIPTS_COLLECTION = "scripts";
 
 export const INDIAN_LANGUAGES = [
   { code: 'kn', name: 'Kannada (ಕನ್ನಡ)' },
@@ -59,7 +41,6 @@ export const createScript = async (userId: string, userEmail: string, title: str
     },
   };
 
-  // 1. Save to Hostinger MySQL Database
   try {
     await fetch('/api/db/scripts', {
       method: 'POST',
@@ -70,22 +51,10 @@ export const createScript = async (userId: string, userEmail: string, title: str
     console.error("Error saving script to MySQL:", err);
   }
 
-  // 2. Sync to Firestore for real-time backup
-  try {
-    await setDoc(doc(db, SCRIPTS_COLLECTION, scriptId), {
-      ...scriptData,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-  } catch (err) {
-    console.warn("Firestore sync backup notice:", err);
-  }
-
   return scriptId;
 };
 
 export const updateScript = async (scriptId: string, data: Partial<Script>) => {
-  // 1. Update in Hostinger MySQL Database
   try {
     const existing = await getScript(scriptId);
     if (existing) {
@@ -99,32 +68,13 @@ export const updateScript = async (scriptId: string, data: Partial<Script>) => {
   } catch (err) {
     console.error("Error updating script in MySQL:", err);
   }
-
-  // 2. Sync to Firestore
-  try {
-    const docRef = doc(db, SCRIPTS_COLLECTION, scriptId);
-    await updateDoc(docRef, {
-      ...data,
-      updatedAt: serverTimestamp(),
-    });
-  } catch (err) {
-    console.warn("Firestore update backup notice:", err);
-  }
 };
 
 export const deleteScript = async (scriptId: string) => {
-  // 1. Delete from Hostinger MySQL Database
   try {
     await fetch(`/api/db/scripts?scriptId=${scriptId}`, { method: 'DELETE' });
   } catch (err) {
     console.error("Error deleting script from MySQL:", err);
-  }
-
-  // 2. Delete from Firestore
-  try {
-    await deleteDoc(doc(db, SCRIPTS_COLLECTION, scriptId));
-  } catch (err) {
-    console.warn("Firestore delete backup notice:", err);
   }
 };
 
@@ -139,13 +89,6 @@ export const getScript = async (scriptId: string): Promise<Script | null> => {
     }
   } catch (err) {
     console.error("Error fetching script from MySQL:", err);
-  }
-
-  // Fallback to Firestore
-  const docRef = doc(db, SCRIPTS_COLLECTION, scriptId);
-  const docSnap = await getDoc(docRef);
-  if (docSnap.exists()) {
-    return { id: docSnap.id, ...docSnap.data() } as Script;
   }
   return null;
 };
@@ -162,15 +105,7 @@ export const getUserScripts = async (userId: string): Promise<Script[]> => {
   } catch (err) {
     console.error("Error fetching user scripts from MySQL:", err);
   }
-
-  // Fallback to Firestore
-  const q = query(
-    collection(db, SCRIPTS_COLLECTION), 
-    where("ownerId", "==", userId),
-    orderBy("updatedAt", "desc")
-  );
-  const querySnapshot = await getDocs(q);
-  return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Script));
+  return [];
 };
 
 export const getScriptByShareId = async (shareId: string): Promise<Script | null> => {
@@ -185,25 +120,21 @@ export const getScriptByShareId = async (shareId: string): Promise<Script | null
   } catch (err) {
     console.error("Error fetching script by shareId from MySQL:", err);
   }
-
-  // Fallback to Firestore
-  const q = query(collection(db, SCRIPTS_COLLECTION), where("shareId", "==", shareId));
-  const querySnapshot = await getDocs(q);
-  if (!querySnapshot.empty) {
-    const doc = querySnapshot.docs[0];
-    return { id: doc.id, ...doc.data() } as Script;
-  }
   return null;
 };
 
 export const subscribeToScript = (scriptId: string, callback: (script: Script | null) => void) => {
-  return onSnapshot(doc(db, SCRIPTS_COLLECTION, scriptId), (doc) => {
-    if (doc.exists()) {
-      callback({ id: doc.id, ...doc.data() } as Script);
-    } else {
-      callback(null);
-    }
-  });
+  let isMounted = true;
+  const poll = async () => {
+    const script = await getScript(scriptId);
+    if (isMounted) callback(script);
+  };
+  poll();
+  const interval = setInterval(poll, 10000);
+  return () => {
+    isMounted = false;
+    clearInterval(interval);
+  };
 };
 
 export const exportToPDF = async (script: Script) => {

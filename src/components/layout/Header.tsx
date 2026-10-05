@@ -29,8 +29,6 @@ import ThemeToggle from '@/components/shared/ThemeToggle';
 import { useApplicationConfig } from '@/hooks/useApplicationConfig'; 
 import { useFeaturesConfig } from '@/hooks/useFeaturesConfig'; // Import new hook
 import type { ReferralSettings } from '@/types/firestore';
-import { doc, onSnapshot } from "firebase/firestore";
-import { db } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
 
 const NavLink = ({ href, children, onClick, isButton = false }: { href?: string; children: React.ReactNode; onClick?: (e: React.MouseEvent<HTMLAnchorElement | HTMLButtonElement>) => void; isButton?: boolean }) => {
@@ -82,26 +80,23 @@ const Header = () => {
   const [referralSettings, setReferralSettings] = useState<ReferralSettings | null>(null);
   const [isLoadingReferral, setIsLoadingReferral] = useState(true);
 
-  // Fetch referral settings - Only for logged in users to save reads
+  // Fetch referral settings via MySQL API
   useEffect(() => {
-      if (!user) {
-          setIsLoadingReferral(false);
-          return;
-      }
-
-      const settingsDocRef = doc(db, "appConfiguration", "referral");
-      const unsubscribe = onSnapshot(settingsDocRef, (docSnap) => {
-          if (docSnap.exists()) {
-              setReferralSettings(docSnap.data() as ReferralSettings);
-          } else {
-              setReferralSettings(null);
-          }
-          setIsLoadingReferral(false);
-      }, (error) => {
-          console.error("Error fetching referral settings:", error);
-          setIsLoadingReferral(false);
-      });
-      return () => unsubscribe();
+    if (!user) {
+      setIsLoadingReferral(false);
+      return;
+    }
+    fetch('/api/db/settings?key=referral')
+      .then(res => res.json())
+      .then(json => {
+        if (json.success && json.data) {
+          setReferralSettings(json.data as ReferralSettings);
+        } else {
+          setReferralSettings(null);
+        }
+      })
+      .catch(() => setReferralSettings(null))
+      .finally(() => setIsLoadingReferral(false));
   }, [user]);
 
 

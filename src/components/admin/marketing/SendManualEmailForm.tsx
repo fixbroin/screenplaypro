@@ -14,8 +14,6 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Loader2, Send, Users, UserSearch, Copy, Tag, Layers } from "lucide-react";
 import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase';
-import { collection, query, orderBy, getDocs, where, limit } from "firebase/firestore";
 import type { FirestoreUser, FirestoreService, FirestoreCategory } from '@/types/firestore';
 import { useGlobalSettings } from '@/hooks/useGlobalSettings';
 import { sendBulkMarketingEmail } from '@/ai/flows/sendBulkMarketingEmailFlow';
@@ -75,9 +73,11 @@ export default function SendManualEmailForm() {
     const fetchSelectData = async () => {
       setIsLoadingCategories(true);
       try {
-        const catQuery = query(collection(db, "adminCategories"), orderBy("name", "asc"));
-        const catSnapshot = await getDocs(catQuery);
-        setAllCategories(catSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as FirestoreCategory)));
+        const res = await fetch('/api/db/collections?name=adminCategories');
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data)) {
+          setAllCategories(json.data as FirestoreCategory[]);
+        }
       } catch (error) {
         toast({ title: "Error", description: "Could not load categories for dropdown.", variant: "destructive" });
       } finally {
@@ -92,9 +92,11 @@ export default function SendManualEmailForm() {
       const fetchUsers = async () => {
         setIsLoadingUsers(true);
         try {
-          const usersQuery = query(collection(db, "users"), orderBy("displayName", "asc"));
-          const snapshot = await getDocs(usersQuery);
-          setAllUsers(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as FirestoreUser)));
+          const res = await fetch('/api/db/collections?name=users');
+          const json = await res.json();
+          if (json.success && Array.isArray(json.data)) {
+            setAllUsers(json.data as FirestoreUser[]);
+          }
         } catch (error) { toast({ title: "Error", description: "Could not load users.", variant: "destructive" }); }
         finally { setIsLoadingUsers(false); }
       };

@@ -12,8 +12,6 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter, CardDescription } from "@/components/ui/card";
 import { Loader2, SendHorizonal, AlertTriangle, XCircle, Megaphone, Clock, Info } from "lucide-react"; 
 import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase';
-import { doc, setDoc, Timestamp } from "firebase/firestore";
 import type { GlobalAdminPopup } from '@/types/firestore';
 import { useGlobalSettings } from '@/hooks/useGlobalSettings';
 import {
@@ -40,7 +38,7 @@ type GlobalMessageFormData = z.infer<typeof globalMessageFormSchema>;
 
 export default function AdminGlobalMessageForm() {
   const { toast } = useToast();
-  const { settings: globalSettings, isLoading: isLoadingGlobalSettings } = useGlobalSettings();
+  const { settings: globalSettings, isLoading: isLoadingGlobalSettings, reloadSettings } = useGlobalSettings();
   const [isSaving, setIsSaving] = useState(false);
 
   const form = useForm<GlobalMessageFormData>({
@@ -69,11 +67,17 @@ export default function AdminGlobalMessageForm() {
         message: data.message,
         isActive: true,
         durationSeconds: data.durationSeconds,
-        sentAt: Timestamp.now(),
+        sentAt: new Date().toISOString() as any,
       };
-      await setDoc(doc(db, "webSettings", "global"), { globalAdminPopup: popupDataToSave, updatedAt: Timestamp.now() }, { merge: true });
+      const merged = { ...globalSettings, globalAdminPopup: popupDataToSave, updatedAt: new Date().toISOString() };
+      await fetch('/api/db/web-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(merged)
+      });
       toast({ title: "Broadcast Sent", description: "All active users will now see your message." });
       form.setValue("isActive", true);
+      reloadSettings();
     } catch (error) {
       toast({ title: "Broadcast Failed", variant: "destructive" });
     } finally {
@@ -85,12 +89,16 @@ export default function AdminGlobalMessageForm() {
     setIsSaving(true);
     try {
         const currentPopupSettings = globalSettings?.globalAdminPopup || { message: "", isActive: false, durationSeconds: 10 };
-        await setDoc(doc(db, "webSettings", "global"), { 
-            globalAdminPopup: { ...currentPopupSettings, isActive: false, sentAt: Timestamp.now() },
-            updatedAt: Timestamp.now() 
-        }, { merge: true });
+        const updatedPopup = { ...currentPopupSettings, isActive: false, sentAt: new Date().toISOString() as any };
+        const merged = { ...globalSettings, globalAdminPopup: updatedPopup, updatedAt: new Date().toISOString() };
+        await fetch('/api/db/web-settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(merged)
+        });
         toast({ title: "Broadcast Stopped" });
         form.setValue("isActive", false);
+        reloadSettings();
     } catch (error) {
         toast({ title: "Deactivation Failed", variant: "destructive" });
     } finally {

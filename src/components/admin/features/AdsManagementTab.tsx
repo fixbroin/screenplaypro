@@ -9,8 +9,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Switch } from "@/components/ui/switch";
 import { PlusCircle, Edit, Trash2, Loader2, ImageIcon as ImageIconLucide, ExternalLink, ListChecks, ShoppingBag, PackageSearch } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { db } from '@/lib/firebase';
-import { doc, getDoc, setDoc, Timestamp } from "firebase/firestore";
 import { triggerRefresh } from '@/lib/revalidateUtils';
 import type { FeaturesConfiguration, HomepageAd, FirestoreCategory, FirestoreService, AdPlacement, AdActionType } from '@/types/firestore';
 import AdForm, { type AdFormData } from './AdForm';
@@ -49,10 +47,10 @@ export default function AdsManagementTab({ allCategories, allServices, isLoading
   const loadConfig = useCallback(async () => {
     setIsLoadingConfig(true);
     try {
-      const configDocRef = doc(db, FEATURES_CONFIG_COLLECTION, FEATURES_CONFIG_DOC_ID);
-      const docSnap = await getDoc(configDocRef);
-      if (docSnap.exists()) {
-        setFeaturesConfig({ ...defaultFeaturesConfig, ...(docSnap.data() as FeaturesConfiguration) });
+      const res = await fetch('/api/db/settings?key=featuresConfiguration');
+      const json = await res.json();
+      if (json.success && json.data) {
+        setFeaturesConfig({ ...defaultFeaturesConfig, ...json.data });
       } else {
         setFeaturesConfig(defaultFeaturesConfig);
       }
@@ -72,19 +70,22 @@ export default function AdsManagementTab({ allCategories, allServices, isLoading
   const handleSaveConfig = async (updatedAds: HomepageAd[]) => {
     setIsSaving(true);
     try {
-      const configDocRef = doc(db, FEATURES_CONFIG_COLLECTION, FEATURES_CONFIG_DOC_ID);
       const newConfig: Partial<FeaturesConfiguration> = {
-        ...featuresConfig, // Preserve other feature settings
+        ...featuresConfig,
         ads: updatedAds,
-        updatedAt: Timestamp.now(),
+        updatedAt: new Date().toISOString(),
       };
-      await setDoc(configDocRef, newConfig, { merge: true });
-      setFeaturesConfig(prev => ({ ...prev, ads: updatedAds })); // Update local state
+      await fetch('/api/db/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'featuresConfiguration', data: newConfig })
+      });
+      setFeaturesConfig(prev => ({ ...prev, ads: updatedAds }));
       
       await triggerRefresh('app-settings');
       await triggerRefresh('global-cache');
 
-      toast({ title: "Success", description: "Ad configuration saved." });
+      toast({ title: "Success", description: "Ad configuration saved to MySQL." });
       return true;
     } catch (error) {
       console.error("Error saving ad configuration:", error);
@@ -120,13 +121,14 @@ export default function AdsManagementTab({ allCategories, allServices, isLoading
   const handleToggleAdActive = async (adId: string, currentIsActive: boolean) => {
     const currentAds = featuresConfig.ads || [];
     const updatedAds = currentAds.map(ad =>
-      ad.id === adId ? { ...ad, isActive: !currentIsActive, updatedAt: Timestamp.now() } : ad
+      ad.id === adId ? { ...ad, isActive: !currentIsActive, updatedAt: new Date().toISOString() } : ad
     );
     await handleSaveConfig(updatedAds);
   };
 
   const handleFormSubmit = async (formData: AdFormData, adId?: string) => {
     const currentAds = [...(featuresConfig.ads || [])];
+    const nowIso = new Date().toISOString();
     const newAdData: HomepageAd = {
       id: adId || nanoid(),
       name: formData.name,
@@ -137,8 +139,8 @@ export default function AdsManagementTab({ allCategories, allServices, isLoading
       placement: formData.placement as AdPlacement,
       order: formData.order,
       isActive: formData.isActive,
-      createdAt: adId ? (currentAds.find(ad => ad.id === adId)?.createdAt || Timestamp.now()) : Timestamp.now(),
-      updatedAt: Timestamp.now(),
+      createdAt: adId ? (currentAds.find(ad => ad.id === adId)?.createdAt || nowIso) : nowIso,
+      updatedAt: nowIso,
     };
 
     if (adId) { // Editing

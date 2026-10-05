@@ -1,4 +1,4 @@
-import { adminDb } from '@/lib/firebaseAdmin';
+import { queryDb } from '@/lib/mysql';
 import type { FirestoreFAQ } from '@/types/firestore';
 import {
   Accordion,
@@ -10,25 +10,27 @@ import { HelpCircle, PackageSearch } from "lucide-react";
 import Breadcrumbs from '@/components/shared/Breadcrumbs';
 import { unstable_cache } from 'next/cache';
 import JsonLdScript from '@/components/shared/JsonLdScript';
-import { serializeFirestoreData } from '@/lib/serializeUtils';
 
 export const revalidate = false;
 
 const getFaqs = unstable_cache(
   async () => {
     try {
-      const faqsCollectionRef = adminDb.collection("adminFAQs");
-      // Simplified query to avoid requiring a composite index
-      const snapshot = await faqsCollectionRef.where("isActive", "==", true).get();
-      
-      const faqs = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as FirestoreFAQ));
-      
-      // Sort in memory and serialize BEFORE returning to cache
-      return serializeFirestoreData(
-        faqs.sort((a, b) => (a.order || 0) - (b.order || 0))
+      const rows = await queryDb<any[]>(
+        "SELECT id, data FROM generic_collections WHERE collection_name = 'adminFAQs'"
       );
+      
+      const faqs: FirestoreFAQ[] = rows
+        .map(row => {
+          let data: any = {};
+          try { data = JSON.parse(row.data); } catch(e) {}
+          return { ...data, id: row.id };
+        })
+        .filter(f => f.isActive !== false);
+
+      return faqs.sort((a, b) => (a.order || 0) - (b.order || 0));
     } catch (err) {
-      console.error("Error fetching FAQs:", err);
+      console.error("Error fetching FAQs from MySQL:", err);
       return [];
     }
   },
@@ -72,7 +74,7 @@ export default async function FAQPage() {
             Frequently Asked Questions
           </h1>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-            Everything you need to know about Screenplay Pro, artist profiles, and how connections work.
+            Everything you need to know about Screenplay Pro, subscription plans, and script writing tools.
           </p>
         </div>
 

@@ -12,10 +12,6 @@ import {
   Globe, Search, Check, Loader2, Sparkles, MapPin, 
   Compass, HelpCircle, Layers, CheckSquare, Square, RefreshCw, Database
 } from "lucide-react";
-import { db } from '@/lib/firebase';
-import { 
-  collection, getDocs, addDoc, updateDoc, doc, Timestamp, query, where, writeBatch 
-} from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 import { triggerRefresh } from '@/lib/revalidateUtils';
 import { Progress } from "@/components/ui/progress";
@@ -103,16 +99,20 @@ export default function OsmAreaGeneratorDialog({
     if (isOpen) {
       const fetchFullDbData = async () => {
         try {
-          const [citiesSnap, areasSnap] = await Promise.all([
-            getDocs(collection(db, "cities")),
-            getDocs(collection(db, "areas"))
+          const [citiesRes, areasRes] = await Promise.all([
+            fetch('/api/db/collections?name=cities'),
+            fetch('/api/db/collections?name=areas')
           ]);
-          const loadedCities = citiesSnap.docs.map(d => ({ ...d.data(), id: d.id } as FirestoreCity));
-          loadedCities.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+          const [citiesJson, areasJson] = await Promise.all([
+            citiesRes.json(), areasRes.json()
+          ]);
+
+          const loadedCities = (citiesJson.success && Array.isArray(citiesJson.data)) ? citiesJson.data : [];
+          loadedCities.sort((a: any, b: any) => (a.name || '').localeCompare(b.name || ''));
           setFullCities(loadedCities);
 
-          const loadedAreas = areasSnap.docs.map(d => ({ ...d.data(), id: d.id } as FirestoreArea));
-          loadedAreas.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+          const loadedAreas = (areasJson.success && Array.isArray(areasJson.data)) ? areasJson.data : [];
+          loadedAreas.sort((a: any, b: any) => (a.name || '').localeCompare(b.name || ''));
           setFullAreas(loadedAreas);
         } catch (err) {
           console.error("Error fetching full cities/areas for checklist generator:", err);
@@ -467,21 +467,19 @@ export default function OsmAreaGeneratorDialog({
       // Single-query pre-fetching map to bypass querying within the loop
       const existingAreaSettingsMap = new Map<string, string>(); // key: cityName_areaName_categoryId -> doc.id
       if (activeTab === 'area-category') {
-        const snap = await getDocs(collection(db, "areaCategorySeoSettings"));
-        snap.forEach(doc => {
-          const data = doc.data();
-          if (data.cityName && data.areaName && data.categoryId) {
-            existingAreaSettingsMap.set(`${data.cityName.toLowerCase()}_${data.areaName.toLowerCase()}_${data.categoryId}`, doc.id);
-          }
-        });
+        const seoRes = await fetch('/api/db/collections?name=areaCategorySeoSettings');
+        const seoData = await seoRes.json();
+        if (seoData.success && Array.isArray(seoData.data)) {
+          seoData.data.forEach((item: any) => {
+            if (item.cityName && item.areaName && item.categoryId) {
+              existingAreaSettingsMap.set(`${item.cityName.toLowerCase()}_${item.areaName.toLowerCase()}_${item.categoryId}`, item.id);
+            }
+          });
+        }
       }
 
       // Local state mapping to prevent duplicate parent creation in the same batch
       const locallyCreatedAreas = new Map<string, string>(); // cityId_areaSlug -> areaDocId
-
-      // Firestore Write Batch setup
-      let batch = writeBatch(db);
-      let batchCount = 0;
 
       for (let i = 0; i < selectedLocations.length; i++) {
         const loc = selectedLocations[i];
@@ -502,7 +500,9 @@ export default function OsmAreaGeneratorDialog({
         } else if (locallyCreatedAreas.has(areaKey)) {
           parentAreaDocId = locallyCreatedAreas.get(areaKey)!;
         } else {
+          const areaDocId = `area_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
           const areaPayload = {
+            id: areaDocId,
             name: loc.name,
             cityId: selectedParentCity.id,
             cityName: selectedParentCity.name,
@@ -510,21 +510,16 @@ export default function OsmAreaGeneratorDialog({
             isActive: true,
             lat: loc.lat,
             lon: loc.lon,
-            createdAt: Timestamp.now(),
-            updatedAt: Timestamp.now()
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
           };
-          const newAreaDocRef = doc(collection(db, "areas"));
-          batch.set(newAreaDocRef, areaPayload);
-          parentAreaDocId = newAreaDocRef.id;
+          await fetch('/api/db/collections', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ collectionName: 'areas', id: areaDocId, data: areaPayload })
+          });
+          parentAreaDocId = areaDocId;
           locallyCreatedAreas.set(areaKey, parentAreaDocId);
-          batchCount++;
-
-          if (batchCount >= 500) {
-            await batch.commit();
-            await new Promise(resolve => setTimeout(resolve, 500)); // Rate limit buffer to prevent Firestore stream exhaustion
-            batch = writeBatch(db);
-            batchCount = 0;
-          }
         }
 
         if (activeTab === 'manage-areas') {
@@ -536,7 +531,9 @@ export default function OsmAreaGeneratorDialog({
             continue;
           }
 
+          const targetAreaId = existingArea?.id || parentAreaDocId;
           const payload = {
+            id: targetAreaId,
             name: loc.name,
             cityId: selectedParentCity.id,
             cityName: selectedParentCity.name,
@@ -544,28 +541,23 @@ export default function OsmAreaGeneratorDialog({
             isActive: true,
             lat: loc.lat,
             lon: loc.lon,
-            updatedAt: Timestamp.now()
+            updatedAt: new Date().toISOString()
           };
 
           if (existingArea?.id) {
-            const existingRef = doc(db, "areas", existingArea.id);
-            batch.update(existingRef, payload);
+            await fetch('/api/db/collections', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ collectionName: 'areas', id: targetAreaId, data: payload })
+            });
             updatedCount++;
           } else {
-            const newRef = doc(collection(db, "areas"));
-            batch.set(newRef, {
-              ...payload,
-              createdAt: Timestamp.now()
+            await fetch('/api/db/collections', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ collectionName: 'areas', id: targetAreaId, data: { ...payload, createdAt: new Date().toISOString() } })
             });
             createdCount++;
-          }
-
-          batchCount++;
-          if (batchCount >= 500) {
-            await batch.commit();
-            await new Promise(resolve => setTimeout(resolve, 500)); // Rate limit buffer to prevent Firestore stream exhaustion
-            batch = writeBatch(db);
-            batchCount = 0;
           }
 
           progressCounter++;
@@ -617,7 +609,9 @@ export default function OsmAreaGeneratorDialog({
 
             const seo_keywords = generateAreaKeywordsList(selectedParentCity.name, loc.name, categoryName, nearbyStr);
 
+            const targetSeoId = existingDocId || `seo_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
             const payload = {
+              id: targetSeoId,
               cityId: selectedParentCity.id,
               cityName: selectedParentCity.name,
               areaId: parentAreaDocId,
@@ -631,39 +625,25 @@ export default function OsmAreaGeneratorDialog({
               meta_keywords: seo_keywords,
               isActive: true,
               imageHint: `Local portfolio profiles for verified ${categoryName}s working in ${loc.name}, ${selectedParentCity.name} on screenplaypro.in`,
-              updatedAt: Timestamp.now()
+              updatedAt: new Date().toISOString()
             };
 
+            await fetch('/api/db/collections', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ collectionName: 'areaCategorySeoSettings', id: targetSeoId, data: payload })
+            });
+
             if (existingDocId) {
-              const docRef = doc(db, "areaCategorySeoSettings", existingDocId);
-              batch.update(docRef, payload);
               updatedCount++;
             } else {
-              const newRef = doc(collection(db, "areaCategorySeoSettings"));
-              batch.set(newRef, {
-                ...payload,
-                createdAt: Timestamp.now()
-              });
               createdCount++;
-            }
-
-            batchCount++;
-            if (batchCount >= 500) {
-              await batch.commit();
-              await new Promise(resolve => setTimeout(resolve, 500)); // Rate limit buffer to prevent Firestore stream exhaustion
-              batch = writeBatch(db);
-              batchCount = 0;
             }
 
             progressCounter++;
             setCurrentProgress(progressCounter);
           }
         }
-      }
-
-      // Commit remaining batch items
-      if (batchCount > 0) {
-        await batch.commit();
       }
 
       // Revalidate cache files

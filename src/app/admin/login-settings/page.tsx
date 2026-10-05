@@ -13,8 +13,6 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { KeyRound, Save, Loader2, Mail, Phone, MessageSquare } from "lucide-react";
 import { useApplicationConfig } from '@/hooks/useApplicationConfig';
 import { useToast } from "@/hooks/use-toast";
-import { db } from '@/lib/firebase';
-import { doc, setDoc, Timestamp } from 'firebase/firestore';
 import type { AppSettings, LoginMethod } from '@/types/firestore';
 import { triggerRefresh } from '@/lib/revalidateUtils';
 
@@ -65,21 +63,25 @@ export default function LoginSettingsPage() {
   const handleSaveSettings = async (data: LoginSettingsFormData) => {
     setIsSaving(true);
     try {
-      const settingsDocRef = doc(db, "webSettings", "applicationConfig");
       const settingsToUpdate: Partial<AppSettings> = {
+        ...config,
         enableEmailPasswordLogin: data.enableEmailPasswordLogin,
         enableOtpLogin: data.enableOtpLogin,
         enableGoogleLogin: data.enableGoogleLogin,
         defaultLoginMethod: data.defaultLoginMethod,
         defaultOtpCountryCode: data.defaultOtpCountryCode,
-        updatedAt: Timestamp.now(),
+        updatedAt: new Date().toISOString() as any,
       };
-      await setDoc(settingsDocRef, settingsToUpdate, { merge: true });
+      await fetch('/api/db/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'applicationConfig', data: settingsToUpdate })
+      });
       
       await triggerRefresh('app-settings');
       await triggerRefresh('global-cache');
 
-      toast({ title: "Success", description: "Login settings saved successfully." });
+      toast({ title: "Success", description: "Login settings saved to MySQL successfully." });
     } catch (error) {
       console.error("Error saving login settings:", error);
       toast({ title: "Error", description: (error as Error).message || "Could not save login settings.", variant: "destructive" });

@@ -1,25 +1,22 @@
 "use client";
 
-import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/useAuth";
-import { ShieldAlert, KeyRound, Trash2, Loader2, Edit3, User as UserIcon, AtSign, CheckCircle2, XCircle } from "lucide-react";
+import { ShieldAlert, KeyRound, Trash2, Loader2, Edit3, User as UserIcon, CheckCircle2 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { updateProfile, sendPasswordResetEmail, updateEmail } from "firebase/auth";
-import { auth, db } from "@/lib/firebase";
-import { doc, setDoc, deleteDoc, Timestamp, onSnapshot } from "firebase/firestore";
+import { auth } from "@/lib/firebase";
 import { useToast } from '@/hooks/use-toast';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useApplicationConfig } from '@/hooks/useApplicationConfig';
-import { debounce } from 'lodash';
 import { Badge } from '@/components/ui/badge';
 
 const updateNameSchema = z.object({
@@ -27,37 +24,23 @@ const updateNameSchema = z.object({
 });
 type UpdateNameFormValues = z.infer<typeof updateNameSchema>;
 
-const updateUsernameSchema = z.object({
-  username: z.string()
-    .min(3, { message: "Username must be at least 3 characters." })
-    .max(20, { message: "Username cannot exceed 20 characters." })
-    .regex(/^[a-zA-Z0-9_]+$/, { message: "Username can only contain letters, numbers, and underscores." }),
-});
-type UpdateUsernameFormValues = z.infer<typeof updateUsernameSchema>;
-
 const updateEmailSchema = z.object({
   email: z.string().email("Please enter a valid email address."),
 });
 type UpdateEmailFormValues = z.infer<typeof updateEmailSchema>;
 
 export default function ProfilePage() {
-  const { user, firestoreUser, isLoading: authIsLoading, checkUsernameAvailability, generateUsernameSuggestions } = useAuth();
+  const { user, firestoreUser, isLoading: authIsLoading } = useAuth();
   const { toast } = useToast();
-  const router = useRouter();
-  const { config: appConfig, isLoading: isLoadingAppSettings } = useApplicationConfig();
+  const { isLoading: isLoadingAppSettings } = useApplicationConfig();
 
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [isNameDialogOpen, setIsNameDialogOpen] = useState(false);
   const [isSubmittingName, setIsSubmittingName] = useState(false);
-  const [isUsernameDialogOpen, setIsUsernameDialogOpen] = useState(false);
-  const [isSubmittingUsername, setIsSubmittingUsername] = useState(false);
-  const [usernameStatus, setUsernameStatus] = useState<'idle' | 'checking' | 'available' | 'taken' | 'invalid'>('idle');
-  const [suggestions, setSuggestions] = useState<string[]>([]);
   const [isEmailDialogOpen, setIsEmailDialogOpen] = useState(false);
   const [isSubmittingEmail, setIsSubmittingEmail] = useState(false);
   const [isSendingResetEmail, setIsSendingResetEmail] = useState(false);
   const [deletionRequest, setDeletionRequest] = useState<any>(null);
-  const [isLoadingDeletionRequest, setIsLoadingDeletionRequest] = useState(true);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isSuccessDialogOpen, setIsSuccessDialogOpen] = useState(false);
   const [deletionReason, setDeletionReason] = useState("");
@@ -67,97 +50,45 @@ export default function ProfilePage() {
   const [activeTab, setActiveTab] = useState<string>("account");
 
   const nameForm = useForm<UpdateNameFormValues>({ resolver: zodResolver(updateNameSchema) });
-  const usernameForm = useForm<UpdateUsernameFormValues>({ resolver: zodResolver(updateUsernameSchema) });
   const emailForm = useForm<UpdateEmailFormValues>({ resolver: zodResolver(updateEmailSchema) });
 
   useEffect(() => {
     if (user && firestoreUser) {
       nameForm.reset({ displayName: firestoreUser.displayName || user.displayName || "" });
-      usernameForm.reset({ username: firestoreUser.username || "" });
       emailForm.reset({ email: firestoreUser.email || user.email || "" });
       setIsLoadingData(false);
     } else if (!authIsLoading && !user) {
       setIsLoadingData(false);
     }
-  }, [user, firestoreUser, authIsLoading, appConfig, nameForm, emailForm, usernameForm]);
+  }, [user, firestoreUser, authIsLoading, nameForm, emailForm]);
 
   useEffect(() => {
     if (user?.uid) {
-      const deletionDocRef = doc(db, "accountDeletionRequests", user.uid);
-      const unsubscribe = onSnapshot(deletionDocRef, (docSnap) => {
-        if (docSnap.exists()) {
-          setDeletionRequest(docSnap.data());
-        } else {
-          setDeletionRequest(null);
-        }
-        setIsLoadingDeletionRequest(false);
-      }, (error) => {
-        console.error("Error loading deletion request in profile dashboard:", error);
-        setIsLoadingDeletionRequest(false);
-      });
-      return () => unsubscribe();
+      fetch(`/api/db/collections?name=accountDeletionRequests&id=${user.uid}`)
+        .then(res => res.json())
+        .then(json => {
+          if (json.success && json.data) {
+            setDeletionRequest(json.data);
+          } else {
+            setDeletionRequest(null);
+          }
+        })
+        .catch(() => setDeletionRequest(null));
     } else {
       setDeletionRequest(null);
-      setIsLoadingDeletionRequest(false);
     }
   }, [user]);
-
-  const profileUsername = usernameForm.watch("username");
-
-  const debouncedCheck = useCallback(
-    debounce(async (val: string) => {
-      if (val === firestoreUser?.username) {
-        setUsernameStatus('available');
-        return;
-      }
-      if (val.length < 3) {
-        setUsernameStatus('invalid');
-        return;
-      }
-      setUsernameStatus('checking');
-      const isAvailable = await checkUsernameAvailability(val);
-      if (isAvailable) {
-        setUsernameStatus('available');
-        setSuggestions([]);
-      } else {
-        setUsernameStatus('taken');
-        const newSuggestions = await generateUsernameSuggestions(val);
-        setSuggestions(newSuggestions);
-      }
-    }, 500),
-    [checkUsernameAvailability, generateUsernameSuggestions, firestoreUser?.username]
-  );
-
-  useEffect(() => {
-    if (profileUsername && isUsernameDialogOpen) {
-      debouncedCheck(profileUsername);
-    } else {
-      setUsernameStatus('idle');
-      setSuggestions([]);
-    }
-  }, [profileUsername, debouncedCheck, isUsernameDialogOpen]);
-
-  const handleUpdateUsername = async (values: UpdateUsernameFormValues) => {
-    if (!user || usernameStatus !== 'available') return;
-    setIsSubmittingUsername(true);
-    try {
-      const newUsername = values.username.toLowerCase();
-      await setDoc(doc(db, "users", user.uid), { username: newUsername }, { merge: true });
-      toast({ title: "Success", description: "Your username has been updated." });
-      setIsUsernameDialogOpen(false);
-    } catch (error: any) {
-      toast({ title: "Error", description: error.message || "Could not update username.", variant: "destructive" });
-    } finally {
-      setIsSubmittingUsername(false);
-    }
-  };
 
   const handleUpdateName = async (values: UpdateNameFormValues) => {
     if (!user || !auth.currentUser) return;
     setIsSubmittingName(true);
     try {
       await updateProfile(auth.currentUser, { displayName: values.displayName });
-      await setDoc(doc(db, "users", user.uid), { displayName: values.displayName }, { merge: true });
+      await fetch('/api/db/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: user.uid, displayName: values.displayName })
+      });
       toast({ title: "Success", description: "Your name has been updated." });
       setIsNameDialogOpen(false);
     } catch (error: any) {
@@ -172,7 +103,11 @@ export default function ProfilePage() {
     setIsSubmittingEmail(true);
     try {
       await updateEmail(auth.currentUser, values.email); 
-      await setDoc(doc(db, "users", user.uid), { email: values.email }, { merge: true });
+      await fetch('/api/db/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: user.uid, email: values.email })
+      });
       toast({ title: "Email Updated", description: "A verification link has been sent to your new email address." });
       setIsEmailDialogOpen(false);
     } catch (error: any) {
@@ -207,7 +142,8 @@ export default function ProfilePage() {
     if (!user) return;
     setIsCancelingDeletion(true);
     try {
-      await deleteDoc(doc(db, "accountDeletionRequests", user.uid));
+      await fetch(`/api/db/collections?name=accountDeletionRequests&id=${user.uid}`, { method: 'DELETE' });
+      setDeletionRequest(null);
       toast({
         title: "Deletion Request Cancelled",
         description: "Your deletion request has been cancelled successfully."
@@ -228,14 +164,20 @@ export default function ProfilePage() {
     setIsSubmittingDeletionRequest(true);
 
     try {
-      await setDoc(doc(db, "accountDeletionRequests", user.uid), {
+      const payload = {
         userId: user.uid,
         userEmail: user.email || firestoreUser?.email || "",
-        displayName: firestoreUser?.displayName || "Screenwriter",
+        displayName: firestoreUser?.displayName || "User",
         reason: deletionReason,
         status: 'pending',
-        requestedAt: Timestamp.now()
+        requestedAt: new Date().toISOString()
+      };
+      await fetch('/api/db/collections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ collectionName: 'accountDeletionRequests', id: user.uid, data: payload })
       });
+      setDeletionRequest(payload);
 
       toast({
         title: "Deletion Request Submitted",
@@ -302,7 +244,7 @@ export default function ProfilePage() {
                 <div className="flex items-center justify-between p-4 bg-secondary/10 rounded-2xl border border-primary/5">
                   <div>
                     <p className="text-xs text-muted-foreground uppercase font-bold">Display Name</p>
-                    <p className="text-sm font-semibold">{user?.displayName || firestoreUser?.displayName || 'Screenwriter'}</p>
+                    <p className="text-sm font-semibold">{user?.displayName || firestoreUser?.displayName || 'User'}</p>
                   </div>
                   <Button variant="outline" size="sm" onClick={() => setIsNameDialogOpen(true)}>
                     <Edit3 className="h-4 w-4 mr-1" /> Edit
@@ -318,18 +260,6 @@ export default function ProfilePage() {
                     <Badge variant="outline" className="text-emerald-600 border-emerald-300 bg-emerald-50">Verified</Badge>
                   ) : (
                     <Badge variant="outline" className="text-amber-600 border-amber-300 bg-amber-50">Unverified</Badge>
-                  )}
-                </div>
-
-                <div className="flex items-center justify-between p-4 bg-secondary/10 rounded-2xl border border-primary/5">
-                  <div>
-                    <p className="text-xs text-muted-foreground uppercase font-bold">Username</p>
-                    <p className="text-sm font-semibold">{firestoreUser?.username || 'Not set'}</p>
-                  </div>
-                  {appConfig?.allowUsernameEdit && (
-                    <Button variant="outline" size="sm" onClick={() => setIsUsernameDialogOpen(true)}>
-                      <Edit3 className="h-4 w-4 mr-1" /> Edit
-                    </Button>
                   )}
                 </div>
               </CardContent>
@@ -422,74 +352,6 @@ export default function ProfilePage() {
           </Form>
         </DialogContent>
       </Dialog>
-
-      {/* Username Dialog */}
-      {appConfig?.allowUsernameEdit && (
-        <Dialog open={isUsernameDialogOpen} onOpenChange={setIsUsernameDialogOpen}>
-          <DialogContent className="sm:max-w-[425px]">
-            <DialogHeader>
-              <DialogTitle>Update Username</DialogTitle>
-              <DialogDescription>Choose a unique username for your profile.</DialogDescription>
-            </DialogHeader>
-            <Form {...usernameForm}>
-              <form onSubmit={usernameForm.handleSubmit(handleUpdateUsername)} className="space-y-4 py-2">
-                <FormField 
-                  control={usernameForm.control} 
-                  name="username" 
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel htmlFor="username"><AtSign className="inline mr-2 h-4 w-4" />Username</FormLabel>
-                      <FormControl>
-                        <div className="relative">
-                          <Input 
-                            id="username" 
-                            placeholder="johndoe123" 
-                            {...field} 
-                            disabled={isSubmittingUsername}
-                          />
-                          <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                            {usernameStatus === 'checking' && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-                            {usernameStatus === 'available' && <CheckCircle2 className="h-4 w-4 text-green-500" />}
-                            {usernameStatus === 'taken' && <XCircle className="h-4 w-4 text-destructive" />}
-                          </div>
-                        </div>
-                      </FormControl>
-                      {usernameStatus === 'taken' && suggestions.length > 0 && (
-                        <div className="mt-2 space-y-1">
-                          <p className="text-xs text-muted-foreground">Username taken. Suggestions:</p>
-                          <div className="flex flex-wrap gap-2">
-                            {suggestions.map((sug) => (
-                              <Badge 
-                                key={sug} 
-                                variant="outline" 
-                                className="cursor-pointer hover:bg-primary hover:text-primary-foreground"
-                                onClick={() => {
-                                  usernameForm.setValue("username", sug, { shouldValidate: true });
-                                  setUsernameStatus('available');
-                                }}
-                              >
-                                {sug}
-                              </Badge>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <DialogFooter>
-                  <DialogClose asChild><Button type="button" variant="outline" disabled={isSubmittingUsername}>Cancel</Button></DialogClose>
-                  <Button type="submit" disabled={isSubmittingUsername || usernameStatus !== 'available'}>
-                    {isSubmittingUsername && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Save Changes
-                  </Button>
-                </DialogFooter>
-              </form>
-            </Form>
-          </DialogContent>
-        </Dialog>
-      )}
 
       {/* Email Dialog */}
       <Dialog open={isEmailDialogOpen} onOpenChange={setIsEmailDialogOpen}>

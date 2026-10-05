@@ -1,37 +1,31 @@
-
 'use server';
 
-import { adminDb } from './firebaseAdmin';
-import type { GlobalWebSettings, ThemePalette } from '@/types/firestore';
+import { queryDb } from './mysql';
+import type { GlobalWebSettings, ThemePalette, ContentPage } from '@/types/firestore';
 import { DEFAULT_LIGHT_THEME_COLORS_HSL, DEFAULT_DARK_THEME_COLORS_HSL, THEME_PALETTE_KEYS } from '@/lib/colorUtils';
 import { defaultGlobalWebSettings } from '@/config/webDefaults';
 import { defaultAppSettings } from '@/config/appDefaults';
 import { defaultMarketingValues } from '@/hooks/useMarketingSettings';
-import type { ContentPage } from '@/types/firestore';
 import { cache } from 'react';
 import { unstable_cache } from 'next/cache';
 
-const WEB_SETTINGS_DOC_ID = "global";
-const APP_CONFIG_DOC_ID = "applicationConfig";
-const MARKETING_CONFIG_DOC_ID = "marketingConfiguration";
-const WEB_SETTINGS_COLLECTION = "webSettings";
-
 /**
- * Fetches a content page by slug with caching.
+ * Fetches a content page by slug from MySQL.
  */
 export const getContentPageData = cache(async (slug: string): Promise<ContentPage | null> => {
   return unstable_cache(
     async () => {
       try {
-        const pageDocRef = adminDb.collection("contentPages").doc(slug);
-        const docSnap = await pageDocRef.get();
-        if (docSnap.exists) {
-          const data = docSnap.data();
-          return { id: docSnap.id, ...data } as ContentPage;
+        const rows = await queryDb<any[]>(
+          "SELECT data FROM generic_collections WHERE collection_name = 'contentPages' AND id = ?",
+          [slug]
+        );
+        if (rows.length > 0) {
+          return JSON.parse(rows[0].data) as ContentPage;
         }
         return null;
       } catch (error) {
-        console.error(`Error fetching content page for slug "${slug}":`, error);
+        console.error(`Error fetching content page for slug "${slug}" from MySQL:`, error);
         return null;
       }
     },
@@ -41,17 +35,17 @@ export const getContentPageData = cache(async (slug: string): Promise<ContentPag
 });
 
 /**
- * Fetches marketing settings with server-side request memoization using Admin SDK.
- * This is safe to call only from Server Components or Server Actions.
- * Uses unstable_cache for cross-request caching (24 hours).
+ * Fetches marketing settings from MySQL app_settings.
  */
 export const getMarketingSettings = cache(async (): Promise<any> => {
   return unstable_cache(
     async () => {
       try {
-        const docSnap = await adminDb.collection(WEB_SETTINGS_COLLECTION).doc(MARKETING_CONFIG_DOC_ID).get();
-        if (docSnap.exists) {
-          const data = docSnap.data() || {};
+        const rows = await queryDb<any[]>(
+          "SELECT setting_value FROM app_settings WHERE setting_key = 'marketingConfiguration'"
+        );
+        if (rows.length > 0) {
+          const data = JSON.parse(rows[0].setting_value) || {};
           return {
             ...defaultMarketingValues,
             ...data,
@@ -59,7 +53,7 @@ export const getMarketingSettings = cache(async (): Promise<any> => {
         }
         return defaultMarketingValues;
       } catch (error) {
-        console.error('Error fetching marketing settings via Admin SDK:', error);
+        console.error('Error fetching marketing settings from MySQL:', error);
         return defaultMarketingValues;
       }
     },
@@ -72,17 +66,17 @@ export const getMarketingSettings = cache(async (): Promise<any> => {
 });
 
 /**
- * Fetches global app settings with server-side request memoization using Admin SDK.
- * This is safe to call only from Server Components or Server Actions.
- * Uses unstable_cache for cross-request caching (24 hours).
+ * Fetches global app settings from MySQL app_settings.
  */
 export const getGlobalAppSettings = cache(async (): Promise<any> => {
   return unstable_cache(
     async () => {
       try {
-        const docSnap = await adminDb.collection(WEB_SETTINGS_COLLECTION).doc(APP_CONFIG_DOC_ID).get();
-        if (docSnap.exists) {
-          const data = docSnap.data() || {};
+        const rows = await queryDb<any[]>(
+          "SELECT setting_value FROM app_settings WHERE setting_key = 'applicationConfig'"
+        );
+        if (rows.length > 0) {
+          const data = JSON.parse(rows[0].setting_value) || {};
           return {
             ...defaultAppSettings,
             ...data,
@@ -90,7 +84,7 @@ export const getGlobalAppSettings = cache(async (): Promise<any> => {
         }
         return defaultAppSettings;
       } catch (error) {
-        console.error('Error fetching global app settings via Admin SDK:', error);
+        console.error('Error fetching global app settings from MySQL:', error);
         return defaultAppSettings;
       }
     },
@@ -103,17 +97,15 @@ export const getGlobalAppSettings = cache(async (): Promise<any> => {
 });
 
 /**
- * Fetches global web settings with server-side request memoization using Admin SDK.
- * This is safe to call only from Server Components or Server Actions.
- * Uses unstable_cache for cross-request caching (24 hours).
+ * Fetches global web settings from MySQL webSettings table.
  */
 export const getGlobalWebSettings = cache(async (): Promise<GlobalWebSettings> => {
   return unstable_cache(
     async () => {
       try {
-        const docSnap = await adminDb.collection(WEB_SETTINGS_COLLECTION).doc(WEB_SETTINGS_DOC_ID).get();
-        if (docSnap.exists) {
-          const data = docSnap.data() as Partial<GlobalWebSettings>;
+        const rows = await queryDb<any[]>("SELECT config FROM webSettings WHERE id = 'global'");
+        if (rows.length > 0) {
+          const data = (typeof rows[0].config === 'string' ? JSON.parse(rows[0].config || '{}') : rows[0].config) as Partial<GlobalWebSettings>;
           
           const mergedLightPalette: Required<ThemePalette> = { ...DEFAULT_LIGHT_THEME_COLORS_HSL };
           THEME_PALETTE_KEYS.forEach(key => {
@@ -148,7 +140,7 @@ export const getGlobalWebSettings = cache(async (): Promise<GlobalWebSettings> =
         }
         return defaultGlobalWebSettings;
       } catch (error) {
-        console.error('Error fetching global web settings via Admin SDK:', error);
+        console.error('Error fetching global web settings from MySQL:', error);
         return defaultGlobalWebSettings;
       }
     },

@@ -1,4 +1,4 @@
-import { adminDb } from '@/lib/firebaseAdmin';
+import { queryDb } from '@/lib/mysql';
 import type { FirestoreBlogPost, ClientBlogPost } from '@/types/firestore';
 import BlogPostCard from '@/components/blog/BlogPostCard';
 import Breadcrumbs from '@/components/shared/Breadcrumbs';
@@ -8,7 +8,6 @@ import { getBaseUrl } from '@/lib/config';
 import Link from 'next/link';
 import { Calendar, Clock, ArrowRight } from 'lucide-react';
 import { unstable_cache } from 'next/cache';
-import { serializeFirestoreData } from '@/lib/serializeUtils';
 import { getGlobalSEOSettings } from '@/lib/seoServerUtils';
 import JsonLdScript from '@/components/shared/JsonLdScript';
 
@@ -19,18 +18,21 @@ export const revalidate = false; // Persistent Cache
 const getPublishedPosts = unstable_cache(
   async (): Promise<ClientBlogPost[]> => {
     try {
-      const postsRef = adminDb.collection('blogPosts');
-      const snapshot = await postsRef.get();
+      const rows = await queryDb<any[]>(
+        "SELECT id, data, createdAt FROM generic_collections WHERE collection_name = 'blogPosts'"
+      );
       
-      const posts: ClientBlogPost[] = snapshot.docs
-        .map(doc => {
-          const data = serializeFirestoreData(doc.data()) as FirestoreBlogPost;
+      const posts: ClientBlogPost[] = rows
+        .map(row => {
+          let data: any = {};
+          try {
+            data = JSON.parse(row.data);
+          } catch (e) {}
           return {
             ...data,
-            id: doc.id,
-            // Ensure createdAt and updatedAt are ISO strings for the client
-            createdAt: data.createdAt ? (typeof data.createdAt === 'string' ? data.createdAt : new Date().toISOString()) : new Date().toISOString(),
-            updatedAt: data.updatedAt ? (typeof data.updatedAt === 'string' ? data.updatedAt : undefined) : undefined,
+            id: row.id,
+            createdAt: data.createdAt || row.createdAt ? new Date(data.createdAt || row.createdAt).toISOString() : new Date().toISOString(),
+            updatedAt: data.updatedAt ? new Date(data.updatedAt).toISOString() : undefined,
           };
         })
         .filter(post => post.isPublished === true)
@@ -38,7 +40,7 @@ const getPublishedPosts = unstable_cache(
       
       return posts;
     } catch (error) {
-      console.error("Error fetching blog posts:", error);
+      console.error("Error fetching blog posts from MySQL:", error);
       return [];
     }
   },
@@ -50,8 +52,8 @@ export async function generateMetadata(): Promise<Metadata> {
   const seoSettings = await getGlobalSEOSettings();
   const appBaseUrl = getBaseUrl();
   
-  const title = `Expert Home Maintenance Tips & Guides | Blog${seoSettings.defaultMetaTitleSuffix || ' | Screenplay Pro'}`;
-  const description = "Discover professional tips, DIY guides, and home maintenance advice from Screenplay Pro experts. Learn how to keep your home in top shape.";
+  const title = `Expert Screenplay Writing Tips & Guides | Blog${seoSettings.defaultMetaTitleSuffix || ' | Screenplay Pro'}`;
+  const description = "Discover professional scriptwriting tips, formatting guides, and screenwriting advice from Screenplay Pro experts.";
 
   const rawOgImage = seoSettings.structuredDataImage || `/default-image.png`;
   const ogImage = rawOgImage.startsWith('http') ? rawOgImage : `${appBaseUrl}${rawOgImage.startsWith('/') ? '' : '/'}${rawOgImage}`;
@@ -88,7 +90,7 @@ export default async function BlogListPage() {
     "@context": "https://schema.org",
     "@type": "Blog",
     "name": "Screenplay Pro Blog",
-    "description": "Expert home maintenance tips, guides, and updates from Screenplay Pro.",
+    "description": "Expert screenplay writing tips, guides, and updates from Screenplay Pro.",
     "url": `${appBaseUrl}/blog`,
     "publisher": {
       "@type": "Organization",
@@ -118,7 +120,6 @@ export default async function BlogListPage() {
   return (
     <div className="min-h-screen bg-background pb-20">
       <JsonLdScript data={blogListingSchema} idSuffix="blog-list" />
-      {/* Header Section */}
       <div className="bg-primary/5 py-16 md:py-24">
         <div className="container mx-auto px-4">
           <Breadcrumbs items={breadcrumbItems} />
@@ -127,7 +128,7 @@ export default async function BlogListPage() {
               Our <span className="text-primary">Blog</span>
             </h1>
             <p className="text-lg md:text-xl text-muted-foreground leading-relaxed">
-              Expert tips, home maintenance guides, and the latest updates from the Screenplay Pro team.
+              Expert tips, screenplay formatting guides, and the latest updates from the Screenplay Pro team.
             </p>
           </div>
         </div>
@@ -136,7 +137,6 @@ export default async function BlogListPage() {
       <div className="container mx-auto px-4 -mt-10">
         {posts.length > 0 ? (
           <div className="space-y-16">
-            {/* Featured Post */}
             {featuredPost && (
               <Link href={`/blog/${featuredPost.slug}`} className="block group">
                 <div className="relative bg-card rounded-3xl shadow-xl overflow-hidden border border-border/50 transition-all duration-500 hover:shadow-2xl">
@@ -175,7 +175,7 @@ export default async function BlogListPage() {
                         {featuredPost.title}
                       </h2>
                       <p className="text-muted-foreground text-lg line-clamp-3 leading-relaxed">
-                        {featuredPost.excerpt || featuredPost.content.replace(/<[^>]*>?/gm, '').substring(0, 160) + '...'}
+                        {featuredPost.excerpt || (featuredPost.content || '').replace(/<[^>]*>?/gm, '').substring(0, 160) + '...'}
                       </p>
                       <div className="pt-4">
                         <div className="inline-flex items-center gap-2 text-primary font-bold text-lg group-hover:gap-4 transition-all">
@@ -188,12 +188,11 @@ export default async function BlogListPage() {
               </Link>
             )}
 
-            {/* Other Posts Grid */}
             {otherPosts.length > 0 && (
               <div className="space-y-10">
                 <h3 className="text-3xl font-headline font-bold">Recent Articles</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 md:gap-10">
-                  {otherPosts.map((post, index) => (
+                  {otherPosts.map((post) => (
                     <BlogPostCard key={post.id} post={post} />
                   ))}
                 </div>

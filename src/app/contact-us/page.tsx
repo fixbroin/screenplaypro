@@ -1,4 +1,3 @@
-import { adminDb } from '@/lib/firebaseAdmin';
 import type { ContentPage, GlobalWebSettings } from "@/types/firestore";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";

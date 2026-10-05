@@ -1,24 +1,20 @@
-
 "use client";
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import type { FirestoreUser, Address } from '@/types/firestore';
+import type { FirestoreUser } from '@/types/firestore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
-import { UserCircle, Mail, Phone, CalendarDays, CheckCircle, XCircle, Loader2, Edit3, Save, MapPin, AtSign, CheckCircle2, Copy } from 'lucide-react';
+import { UserCircle, Mail, Phone, CheckCircle, XCircle, Loader2, Edit3, Save, MapPin, CheckCircle2, Copy } from 'lucide-react';
 import { ScrollArea } from '../ui/scroll-area';
 import AppImage from '@/components/ui/AppImage';
 import { getTimestampMillis } from '@/lib/utils';
-import { useAuth } from '@/hooks/useAuth';
-import { debounce } from 'lodash';
-import { Badge } from '@/components/ui/badge';
 
 interface UserDetailsModalProps {
   user: FirestoreUser;
@@ -28,9 +24,6 @@ interface UserDetailsModalProps {
 
 const userEditSchema = z.object({
   displayName: z.string().min(2, "Name must be at least 2 characters.").max(50, "Name too long."),
-  username: z.string().min(3, "Username must be at least 3 characters.").max(30, "Username too long.")
-    .regex(/^[a-z0-9_]+$/, "Username can only contain lowercase letters, numbers, and underscores.")
-    .optional().or(z.literal('')),
   email: z.string().email("Invalid email address."),
   mobileNumber: z.string()
     .min(10, "Mobile number must be 10-15 digits.")
@@ -42,11 +35,8 @@ const userEditSchema = z.object({
 type UserEditFormData = z.infer<typeof userEditSchema>;
 
 export default function UserDetailsModal({ user, onClose, onUpdateUser }: UserDetailsModalProps) {
-  const { checkUsernameAvailability, generateUsernameSuggestions } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [usernameStatus, setUsernameStatus] = useState<'idle' | 'checking' | 'available' | 'taken' | 'invalid'>('idle');
-  const [suggestions, setSuggestions] = useState<string[]>([]);
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
   const handleCopy = (text: string, fieldName: string) => {
@@ -62,62 +52,23 @@ export default function UserDetailsModal({ user, onClose, onUpdateUser }: UserDe
     resolver: zodResolver(userEditSchema),
     defaultValues: {
       displayName: user.displayName || "",
-      username: user.username || "",
       email: user.email || "",
       mobileNumber: user.mobileNumber || "",
     },
   });
 
-  const watchedUsername = form.watch("username");
-
-  const debouncedCheck = useCallback(
-    debounce(async (val: string) => {
-      if (val === user.username) {
-        setUsernameStatus('available');
-        return;
-      }
-      if (val.length < 3) {
-        setUsernameStatus('invalid');
-        return;
-      }
-      setUsernameStatus('checking');
-      const isAvailable = await checkUsernameAvailability(val);
-      if (isAvailable) {
-        setUsernameStatus('available');
-        setSuggestions([]);
-      } else {
-        setUsernameStatus('taken');
-        const newSuggestions = await generateUsernameSuggestions(val);
-        setSuggestions(newSuggestions);
-      }
-    }, 500),
-    [checkUsernameAvailability, generateUsernameSuggestions, user.username]
-  );
-
-  useEffect(() => {
-    if (watchedUsername && isEditing) {
-      debouncedCheck(watchedUsername);
-    } else {
-      setUsernameStatus('idle');
-      setSuggestions([]);
-    }
-  }, [watchedUsername, debouncedCheck, isEditing]);
-
   useEffect(() => {
     form.reset({
       displayName: user.displayName || "",
-      username: user.username || "",
       email: user.email || "",
       mobileNumber: user.mobileNumber || "",
     });
   }, [user, form]);
 
   const onSubmit = async (data: UserEditFormData) => {
-    if (usernameStatus === 'taken' || usernameStatus === 'invalid') return;
     setIsSubmitting(true);
     const success = await onUpdateUser({
       displayName: data.displayName,
-      username: data.username || undefined,
       email: data.email,
       mobileNumber: data.mobileNumber || null,
     });
@@ -135,16 +86,12 @@ export default function UserDetailsModal({ user, onClose, onUpdateUser }: UserDe
   
   const handleWhatsAppClick = (e: React.MouseEvent, mobileNumber?: string | null) => {
     e.stopPropagation();
-  
-    if (!mobileNumber) return; // ✅ THIS LINE FIXES EVERYTHING
-  
+    if (!mobileNumber) return;
     const sanitizedPhone = mobileNumber.replace(/\D/g, '');
     const internationalPhone = sanitizedPhone.startsWith('91')
       ? sanitizedPhone
       : `91${sanitizedPhone}`;
-  
     const message = encodeURIComponent("Hi, I'm contacting you from Screenplay Pro.");
-  
     window.open(`https://wa.me/${internationalPhone}?text=${message}`, '_blank');
   };
 
@@ -185,58 +132,12 @@ export default function UserDetailsModal({ user, onClose, onUpdateUser }: UserDe
                 />
                 <FormField
                   control={form.control}
-                  name="username"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="flex items-center"><AtSign className="mr-2 h-4 w-4 text-muted-foreground"/>Username</FormLabel>
-                      <FormControl>
-                        <div className="relative">
-                          <Input 
-                            {...field} 
-                            disabled={isSubmitting} 
-                            placeholder="e.g., srikanth_123" 
-                          />
-                          <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                            {usernameStatus === 'checking' && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-                            {usernameStatus === 'available' && <CheckCircle2 className="h-4 w-4 text-green-500" />}
-                            {usernameStatus === 'taken' && <XCircle className="h-4 w-4 text-destructive" />}
-                          </div>
-                        </div>
-                      </FormControl>
-                      {usernameStatus === 'taken' && suggestions.length > 0 && (
-                        <div className="mt-2 space-y-1">
-                          <p className="text-[10px] text-muted-foreground uppercase font-bold">Suggestions:</p>
-                          <div className="flex flex-wrap gap-1.5">
-                            {suggestions.map((sug) => (
-                              <Badge 
-                                key={sug} 
-                                variant="outline" 
-                                className="cursor-pointer hover:bg-primary hover:text-primary-foreground text-[10px] py-0 h-5"
-                                onClick={() => {
-                                  form.setValue("username", sug, { shouldValidate: true });
-                                  setUsernameStatus('available');
-                                }}
-                              >
-                                {sug}
-                              </Badge>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      <FormDescription className="text-xs">Lowercase, numbers, and underscores only.</FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
                   name="email"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel className="flex items-center"><Mail className="mr-2 h-4 w-4 text-muted-foreground"/>Email Address</FormLabel>
                       <FormControl><Input type="email" {...field} disabled={isSubmitting} /></FormControl>
                       <FormMessage />
-                      <FormDescription className="text-xs">Changing this only updates Firestore record, not Firebase Auth login email without Admin SDK.</FormDescription>
                     </FormItem>
                   )}
                 />
@@ -270,7 +171,6 @@ export default function UserDetailsModal({ user, onClose, onUpdateUser }: UserDe
                       </Button>
                     )}
                   </div>
-                  <div><strong>Username:</strong> {user.username ? `@${user.username}` : "N/A"}</div>
                   <div className="flex items-center gap-1">
                     <strong>Email:</strong> {user.email || "N/A"}
                     {user.email && (

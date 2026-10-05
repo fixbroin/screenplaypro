@@ -6,17 +6,12 @@ import {
   Carousel,
   CarouselContent,
   CarouselItem,
-  CarouselNext,
-  CarouselPrevious,
   type CarouselApi
 } from "@/components/ui/carousel";
 import Autoplay from "embla-carousel-autoplay";
 import { Button } from "@/components/ui/button";
-import { db } from "@/lib/firebase";
-import { collection, query, where, orderBy, getDocs, onSnapshot } from "firebase/firestore";
 import type { FirestoreSlide, SlideButtonLinkType } from "@/types/firestore";
-import { Skeleton } from "@/components/ui/skeleton";
-import { PlaySquare, ChevronRight, ChevronLeft } from "lucide-react";
+import { ChevronRight, ChevronLeft } from "lucide-react";
 import { useApplicationConfig } from '@/hooks/useApplicationConfig';
 import { defaultAppSettings } from '@/config/appDefaults';
 import { useAuth } from '@/hooks/useAuth';
@@ -51,36 +46,33 @@ export function HeroCarousel() {
     return [];
   }, [autoplayEnabled, autoplayDelay, slides.length]);
 
-  // Real-time listener for slides
   useEffect(() => {
-    // Initial Hydration from Cache
     const cached = getCache<FirestoreSlide[]>('hero-slides', true);
     if (cached) setSlides(cached);
 
-    const slidesCollectionRef = collection(db, "adminSlideshows");
-    const q = query(slidesCollectionRef, where("isActive", "==", true), orderBy("order", "asc"));
-    
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-        const fetchedSlides = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as FirestoreSlide));
-        setSlides(fetchedSlides);
-        setCache('hero-slides', fetchedSlides, true);
-        setIsLoadingSlides(false);
+    fetch('/api/db/slideshows')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && Array.isArray(data.slides)) {
+          const activeSlides = data.slides.filter((s: any) => s.isActive !== false);
+          setSlides(activeSlides);
+          setCache('hero-slides', activeSlides, true);
 
-        // --- PRE-LOAD IMAGES FOR CACHING ---
-        if (typeof window !== 'undefined') {
-            fetchedSlides.forEach(slide => {
-                if (slide.imageUrl) {
-                    const img = new Image();
-                    img.src = slide.imageUrl;
-                }
+          if (typeof window !== 'undefined') {
+            activeSlides.forEach((slide: any) => {
+              if (slide.imageUrl) {
+                const img = new Image();
+                img.src = slide.imageUrl;
+              }
             });
+          }
         }
-    }, (err) => {
-        console.error("Error listening to slides:", err);
         setIsLoadingSlides(false);
-    });
-
-    return () => unsubscribe();
+      })
+      .catch((err) => {
+        console.error("Error fetching slides from MySQL:", err);
+        setIsLoadingSlides(false);
+      });
   }, []);
 
   useEffect(() => {
@@ -143,11 +135,11 @@ export function HeroCarousel() {
                   )}
                   onClick={(!slide.buttonText && slide.buttonLinkValue) ? () => handleSlideNavigation(slide.buttonLinkType, slide.buttonLinkValue) : undefined}
                 >
-                  {/* Image Layer with Ken Burns effect */}
                   <div className={cn(
                      "absolute inset-0 transition-transform ease-linear",
                      isActive ? "scale-110" : "scale-100"
-                  )} style={{ transitionDuration: '10000ms' }}>                    <AppImage
+                  )} style={{ transitionDuration: '10000ms' }}>
+                    <AppImage
                         src={slide.imageUrl}
                         alt={slide.title || "Screenplay Pro Promotion"}
                         fill
@@ -158,12 +150,10 @@ export function HeroCarousel() {
                     />
                   </div>
 
-                  {/* Dark Overlay with Dynamic Depth - Only show if has text */}
                   {hasText && (
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
                   )}
 
-                  {/* Content Layer with Staggered Animations */}
                   {hasText && (
                     <div className="absolute inset-0 flex flex-col justify-end p-4 sm:p-10 md:p-16 lg:p-20 text-center sm:text-left">
                       <div className="max-w-2xl mx-auto sm:mx-0 space-y-2 sm:space-y-4">
@@ -212,7 +202,6 @@ export function HeroCarousel() {
           })}
         </CarouselContent>
 
-        {/* Premium Navigation Controls */}
         {slides.length > 1 && (
           <>
             <div className="absolute top-1/2 -translate-y-1/2 left-4 md:left-8 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
@@ -239,7 +228,6 @@ export function HeroCarousel() {
         )}
       </Carousel>
 
-      {/* Premium Animated Progress Indicators - BELOW the image */}
       {slides.length > 1 && (
         <div className="flex items-center justify-center gap-2 mt-4">
             {slides.map((_, i) => (

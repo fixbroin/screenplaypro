@@ -1,8 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { doc, onSnapshot, getDoc } from "firebase/firestore";
-import { db } from '@/lib/firebase';
 import type { AppSettings } from '@/types/firestore';
 import { defaultAppSettings } from '@/config/appDefaults';
 import { getCache, setCache } from '@/lib/client-cache';
@@ -49,25 +47,20 @@ export function useApplicationConfig(): UseApplicationConfigReturn {
   }, []);
 
   useEffect(() => {
-    const configDocRef = doc(db, APP_CONFIG_COLLECTION, APP_CONFIG_DOC_ID);
-
-    // Use onSnapshot for real-time updates
-    const unsubscribe = onSnapshot(configDocRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const processed = processData(docSnap.data());
-        setConfig(processed);
-        setCache(CACHE_KEY, processed, true);
+    fetch('/api/db/settings?key=applicationConfig')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.data) {
+          const processed = processData(data.data);
+          setConfig(processed);
+          setCache(CACHE_KEY, processed, true);
+        }
         setIsLoading(false);
-      } else {
+      })
+      .catch((err) => {
+        console.error("Error fetching config from MySQL:", err);
         setIsLoading(false);
-      }
-    }, (err) => {
-      console.error("Error fetching config:", err);
-      setError("Failed to load application configuration.");
-      setIsLoading(false);
-    });
-
-    return () => unsubscribe();
+      });
   }, [processData]);
 
   return { config, isLoading, error };

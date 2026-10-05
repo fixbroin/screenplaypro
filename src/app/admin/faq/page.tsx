@@ -9,8 +9,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { PlusCircle, Edit, Trash2, Loader2, HelpCircle, CheckCircle, XCircle } from "lucide-react";
 import type { FirestoreFAQ } from '@/types/firestore';
 import FAQForm from '@/components/admin/FAQForm';
-import { db } from '@/lib/firebase';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, orderBy, query, Timestamp } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { triggerRefresh } from '@/lib/revalidateUtils';
@@ -26,22 +24,16 @@ export default function AdminFAQPage() {
   const [isMounted, setIsMounted] = useState(false);
   const { toast } = useToast();
 
-  const faqsCollectionRef = collection(db, "adminFAQs");
-
   const fetchFAQs = async () => {
     setIsLoading(true);
     try {
-      const q = query(faqsCollectionRef, orderBy("order", "asc"));
-      const data = await getDocs(q);
-      const fetchedFAQs = data.docs.map((doc) => ({ ...doc.data(), id: doc.id } as FirestoreFAQ));
-      setFaqs(fetchedFAQs);
+      const res = await fetch('/api/db/collections?name=adminFAQs');
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        setFaqs(json.data as FirestoreFAQ[]);
+      }
     } catch (error) {
-      console.error("Error fetching FAQs: ", error);
-      toast({
-        title: "Error",
-        description: "Could not fetch FAQs.",
-        variant: "destructive",
-      });
+      console.error("Error fetching FAQs from MySQL: ", error);
     } finally {
       setIsLoading(false);
     }
@@ -50,7 +42,6 @@ export default function AdminFAQPage() {
   useEffect(() => {
     setIsMounted(true);
     fetchFAQs();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleAddFAQ = () => {
@@ -66,12 +57,11 @@ export default function AdminFAQPage() {
   const handleDeleteFAQ = async (faqId: string) => {
     setIsSubmitting(true);
     try {
-      await deleteDoc(doc(db, "adminFAQs", faqId));
+      await fetch(`/api/db/collections?name=adminFAQs&id=${faqId}`, { method: 'DELETE' });
       setFaqs(faqs.filter(faq => faq.id !== faqId));
-      toast({ title: "Success", description: "FAQ deleted successfully." });
+      toast({ title: "Success", description: "FAQ deleted from MySQL successfully." });
       await triggerRefresh('faqs');
       await triggerRefresh('sitemap');
-      // Removed global-cache trigger to save reads
     } catch (error) {
       console.error("Error deleting FAQ: ", error);
       toast({ title: "Error", description: "Could not delete FAQ.", variant: "destructive" });
@@ -83,30 +73,32 @@ export default function AdminFAQPage() {
   const handleFormSubmit = async (data: Omit<FirestoreFAQ, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => {
     setIsSubmitting(true);
     
-    const payloadForFirestore: Omit<FirestoreFAQ, 'id' | 'createdAt' | 'updatedAt'> = {
+    const docId = data.id || `faq_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const fullFaqData = {
+      id: docId,
       question: data.question,
       answer: data.answer,
       order: Number(data.order),
       isActive: data.isActive === undefined ? true : data.isActive,
+      updatedAt: new Date().toISOString(),
+      ...(data.id ? {} : { createdAt: new Date().toISOString() })
     };
 
     try {
-      if (editingFAQ && data.id) { 
-        const faqDoc = doc(db, "adminFAQs", data.id);
-        await updateDoc(faqDoc, { ...payloadForFirestore, updatedAt: Timestamp.now() });
-        toast({ title: "Success", description: "FAQ updated successfully." });
-      } else { 
-        await addDoc(faqsCollectionRef, { ...payloadForFirestore, createdAt: Timestamp.now() });
-        toast({ title: "Success", description: "FAQ added successfully." });
-      }
+      await fetch('/api/db/collections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ collectionName: 'adminFAQs', id: docId, data: fullFaqData })
+      });
+
+      toast({ title: "Success", description: data.id ? "FAQ updated in MySQL." : "FAQ added to MySQL." });
       await triggerRefresh('faqs');
       await triggerRefresh('sitemap');
-      // Removed global-cache trigger to save reads
       setIsFormOpen(false);
       setEditingFAQ(null);
-      await fetchFAQs(); 
+      fetchFAQs();
     } catch (error) {
-      console.error("Error saving FAQ: ", error);
+      console.error("Error submitting FAQ form: ", error);
       toast({ title: "Error", description: (error as Error).message || "Could not save FAQ.", variant: "destructive" });
     } finally {
       setIsSubmitting(false);

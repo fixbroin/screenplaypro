@@ -12,8 +12,6 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter, CardDescription } from "@/components/ui/card";
 import { Loader2, Save, Volume2, Trash2, UploadCloud, MessageSquare, Bot, Music, Globe } from "lucide-react";
 import { useToast } from '@/hooks/use-toast';
-import { db, storage } from '@/lib/firebase';
-import { doc, setDoc, Timestamp } from "firebase/firestore";
 import { uploadLocalImage, deleteLocalImage } from '@/lib/fileUploadUtils';
 import type { GlobalWebSettings } from '@/types/firestore';
 import { useGlobalSettings } from '@/hooks/useGlobalSettings';
@@ -34,7 +32,7 @@ type ChatSettingsFormData = z.infer<typeof chatSettingsFormSchema>;
 
 export default function ChatSettingsForm() {
   const { toast } = useToast();
-  const { settings: globalSettings, isLoading: isLoadingGlobalSettings, error: globalSettingsError } = useGlobalSettings();
+  const { settings: globalSettings, isLoading: isLoadingGlobalSettings, error: globalSettingsError, reloadSettings } = useGlobalSettings();
   const [isSaving, setIsSaving] = useState(false);
 
   const [selectedSoundFile, setSelectedSoundFile] = useState<File | null>(null);
@@ -108,13 +106,20 @@ export default function ChatSettingsForm() {
     }
 
     try {
-      await setDoc(doc(db, "webSettings", "global"), {
+      const updateData = {
+        ...globalSettings,
         isChatEnabled: data.isChatEnabled,
         isAiChatBotEnabled: data.isAiChatBotEnabled,
         chatNotificationSoundUrl: finalSoundUrl,
-        updatedAt: Timestamp.now(),
-      }, { merge: true });
-      toast({ title: "Settings Saved", description: "Your chat preferences have been updated." });
+        updatedAt: new Date().toISOString(),
+      };
+      await fetch('/api/db/web-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updateData)
+      });
+      toast({ title: "Settings Saved", description: "Your chat preferences have been updated in MySQL." });
+      reloadSettings();
     } catch (error) {
       toast({ title: "Save Failed", variant: "destructive" });
     } finally {

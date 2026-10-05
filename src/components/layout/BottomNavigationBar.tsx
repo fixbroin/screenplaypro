@@ -1,17 +1,14 @@
-
 "use client";
 
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
-import { Home, FileText, Handshake, CreditCard, UserCircle as UserIcon } from 'lucide-react';
+import { Home, FileText, CreditCard, UserCircle as UserIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 import { useLoading } from '@/contexts/LoadingContext';
 import { useFeaturesConfig } from '@/hooks/useFeaturesConfig';
-import { useState, useEffect } from 'react'; // Added useState & useEffect
-import { doc, onSnapshot } from 'firebase/firestore'; // Added onSnapshot
-import { db } from '@/lib/firebase'; // Added db
-import type { ReferralSettings } from '@/types/firestore'; // Added ReferralSettings
+import { useState, useEffect } from 'react';
+import type { ReferralSettings } from '@/types/firestore';
 import type { ElementType } from 'react';
 
 interface NavItem {
@@ -19,7 +16,7 @@ interface NavItem {
   label: string;
   icon: ElementType;
   isProtected: boolean;
-  condition?: () => boolean; // Add optional condition
+  condition?: () => boolean;
 }
 
 const BottomNavigationBar = () => {
@@ -27,32 +24,21 @@ const BottomNavigationBar = () => {
   const router = useRouter();
   const { user, triggerAuthRedirect } = useAuth();
   const { showLoading } = useLoading();
-  const { featuresConfig, isLoading: isLoadingFeatures } = useFeaturesConfig();
+  const { featuresConfig } = useFeaturesConfig();
   
-  // New state for referral settings
   const [referralSettings, setReferralSettings] = useState<ReferralSettings | null>(null);
-  const [isLoadingReferral, setIsLoadingReferral] = useState(true);
 
-  // Fetch referral settings - Only for logged in users to save reads
   useEffect(() => {
-      if (!user) {
-          setIsLoadingReferral(false);
-          return;
-      }
+      if (!user) return;
       
-      const settingsDocRef = doc(db, "appConfiguration", "referral");
-      const unsubscribe = onSnapshot(settingsDocRef, (docSnap) => {
-          if (docSnap.exists()) {
-              setReferralSettings(docSnap.data() as ReferralSettings);
-          } else {
-              setReferralSettings(null);
+      fetch('/api/db/settings?key=referral')
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success && data.data) {
+            setReferralSettings(data.data as ReferralSettings);
           }
-          setIsLoadingReferral(false);
-      }, (error) => {
-          console.error("Error fetching referral settings:", error);
-          setIsLoadingReferral(false);
-      });
-      return () => unsubscribe();
+        })
+        .catch(() => {});
   }, [user]);
 
   const navItems: NavItem[] = [
@@ -75,7 +61,6 @@ const BottomNavigationBar = () => {
   };
 
   const filteredNavItems = navItems.filter(item => item.condition ? item.condition() : true);
-  const itemWidthClass = `w-1/${filteredNavItems.length}`;
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 md:hidden bg-background/95 backdrop-blur-lg border-t border-border/50 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] z-40 pb-safe">

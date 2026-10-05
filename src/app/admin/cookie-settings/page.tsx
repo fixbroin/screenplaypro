@@ -9,17 +9,12 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Cookie, Save, Loader2 } from "lucide-react";
 import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase';
-import { doc, getDoc, setDoc, Timestamp } from "firebase/firestore";
 import type { GlobalWebSettings } from '@/types/firestore';
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { useGlobalSettings } from '@/hooks/useGlobalSettings';
-
-const WEB_SETTINGS_DOC_ID = "global";
-const WEB_SETTINGS_COLLECTION = "webSettings";
 
 const cookieSettingsSchema = z.object({
   isCookieConsentEnabled: z.boolean().default(false),
@@ -56,15 +51,19 @@ export default function CookieSettingsPage() {
   const handleSaveSettings = async (data: CookieSettingsFormData) => {
     setIsSaving(true);
     try {
-      const settingsDocRef = doc(db, WEB_SETTINGS_COLLECTION, WEB_SETTINGS_DOC_ID);
-      const dataToSave: Partial<GlobalWebSettings> = {
+      const updateData: Partial<GlobalWebSettings> = {
         isCookieConsentEnabled: data.isCookieConsentEnabled,
         cookieConsentMessage: data.cookieConsentMessage,
         cookiePolicyContent: data.cookiePolicyContent,
-        updatedAt: Timestamp.now(),
+        updatedAt: new Date().toISOString(),
       };
-      await setDoc(settingsDocRef, dataToSave, { merge: true });
-      toast({ title: "Success", description: "Cookie settings saved successfully." });
+      const merged = { ...globalSettings, ...updateData };
+      await fetch('/api/db/web-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(merged)
+      });
+      toast({ title: "Success", description: "Cookie settings saved to MySQL successfully." });
     } catch (error) {
       console.error("Error saving cookie settings:", error);
       toast({ title: "Error", description: "Could not save cookie settings.", variant: "destructive" });

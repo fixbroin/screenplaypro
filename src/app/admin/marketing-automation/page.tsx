@@ -14,8 +14,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Loader2, Save, Send, Mail, Users, ShoppingCart, Repeat, Megaphone, Layers } from "lucide-react";
 import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase';
-import { doc, getDoc, setDoc, Timestamp, collection, query, where, orderBy, limit, getDocs } from "firebase/firestore";
 import type { MarketingAutomationSettings, AutomationDelay as AutomationDelayType, FirestoreService, FirestoreCategory } from '@/types/firestore';
 import { sendMarketingEmail } from '@/ai/flows/sendMarketingEmailFlow';
 import { useApplicationConfig } from '@/hooks/useApplicationConfig';
@@ -94,9 +92,11 @@ export default function MarketingAutomationPage() {
     const fetchSelectData = async () => {
       setIsLoadingCategories(true);
       try {
-        const catQuery = query(collection(db, "adminCategories"), orderBy("name", "asc"));
-        const catSnapshot = await getDocs(catQuery);
-        setAllCategories(catSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as FirestoreCategory)));
+        const res = await fetch('/api/db/collections?name=adminCategories');
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data)) {
+          setAllCategories(json.data as FirestoreCategory[]);
+        }
       } catch (error) {
         toast({ title: "Error", description: "Could not load categories for dropdowns.", variant: "destructive" });
       } finally {
@@ -110,13 +110,12 @@ export default function MarketingAutomationPage() {
   const loadSettings = useCallback(async () => {
     setIsLoading(true);
     try {
-      const settingsDocRef = doc(db, MARKETING_AUTOMATION_COLLECTION, MARKETING_AUTOMATION_DOC_ID);
-      const docSnap = await getDoc(settingsDocRef);
-      if (docSnap.exists()) {
-        const data = docSnap.data() as MarketingAutomationSettings;
+      const res = await fetch('/api/db/settings?key=marketingAutomation');
+      const json = await res.json();
+      if (json.success && json.data) {
         form.reset({ 
             ...defaultMarketingAutomationSettings, 
-            ...data,
+            ...json.data,
         });
       } else {
         form.reset(defaultMarketingAutomationSettings);
@@ -135,13 +134,16 @@ export default function MarketingAutomationPage() {
   const onSubmit = async (data: MarketingAutomationFormData) => {
     setIsSaving(true);
     try {
-      const settingsDocRef = doc(db, MARKETING_AUTOMATION_COLLECTION, MARKETING_AUTOMATION_DOC_ID);
       const dataToSave: MarketingAutomationSettings = {
         ...data,
-        updatedAt: Timestamp.now(),
+        updatedAt: new Date().toISOString(),
       };
-      await setDoc(settingsDocRef, dataToSave, { merge: true });
-      toast({ title: "Success", description: "Marketing automation settings have been saved." });
+      await fetch('/api/db/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'marketingAutomation', data: dataToSave })
+      });
+      toast({ title: "Success", description: "Marketing automation settings have been saved to MySQL." });
     } catch (error) {
       toast({ title: "Error", description: "Could not save settings.", variant: "destructive" });
     } finally {
@@ -156,32 +158,32 @@ export default function MarketingAutomationPage() {
     
     try {
         const baseUrl = getBaseUrl();
-        const popularServicesQuery = query(collection(db, "adminServices"), where("isActive", "==", true), orderBy("rating", "desc"), limit(5));
-        const popularServicesSnap = await getDocs(popularServicesQuery);
-        const popularServicesHtml = `<ul>${popularServicesSnap.docs.map(doc => `<li><a href="${baseUrl}/service/${doc.data().slug}">${doc.data().name}</a></li>`).join('')}</ul>`;
-        
-        const popularCategoriesQuery = query(collection(db, "adminCategories"), orderBy('order', 'asc'), limit(5));
-        const popularCategoriesSnap = await getDocs(popularCategoriesQuery);
-        const popularCategoriesHtml = `<ul>${popularCategoriesSnap.docs.map(doc => `<li><a href="${baseUrl}/category/${doc.data().slug}">${doc.data().name}</a></li>`).join('')}</ul>`;
+        const servRes = await fetch('/api/db/collections?name=adminServices').then(r => r.json()).catch(() => ({ data: [] }));
+        const catRes = await fetch('/api/db/collections?name=adminCategories').then(r => r.json()).catch(() => ({ data: [] }));
+        const subCatRes = await fetch('/api/db/collections?name=adminSubCategories').then(r => r.json()).catch(() => ({ data: [] }));
 
-        const allServicesSnap = await getDocs(query(collection(db, "adminServices"), where("isActive", "==", true), orderBy("name", "asc")));
-        const allServicesHtml = `<ul>${allServicesSnap.docs.map(doc => `<li><a href="${baseUrl}/service/${doc.data().slug}">${doc.data().name}</a></li>`).join('')}</ul>`;
-        
-        const allCategoriesSnap = await getDocs(query(collection(db, "adminCategories"), orderBy("order", "asc")));
-        const allCategoriesHtml = `<ul>${allCategoriesSnap.docs.map(doc => `<li><a href="${baseUrl}/category/${doc.data().slug}">${doc.data().name}</a></li>`).join('')}</ul>`;
+        const services: FirestoreService[] = servRes.success && Array.isArray(servRes.data) ? servRes.data : [];
+        const categories: FirestoreCategory[] = catRes.success && Array.isArray(catRes.data) ? catRes.data : [];
+        const subCategories: any[] = subCatRes.success && Array.isArray(subCatRes.data) ? subCatRes.data : [];
+
+        const activeServices = services.filter(s => s.isActive);
+        const popularServicesHtml = `<ul>${activeServices.slice(0, 5).map(s => `<li><a href="${baseUrl}/service/${s.slug}">${s.name}</a></li>`).join('')}</ul>`;
+        const popularCategoriesHtml = `<ul>${categories.slice(0, 5).map(c => `<li><a href="${baseUrl}/category/${c.slug}">${c.name}</a></li>`).join('')}</ul>`;
+
+        const allServicesHtml = `<ul>${activeServices.map(s => `<li><a href="${baseUrl}/service/${s.slug}">${s.name}</a></li>`).join('')}</ul>`;
+        const allCategoriesHtml = `<ul>${categories.map(c => `<li><a href="${baseUrl}/category/${c.slug}">${c.name}</a></li>`).join('')}</ul>`;
         
         const cartContentHtml = `<ul><li>Sample Service A (x1)</li><li>Sample Service B (x2)</li></ul>`;
         
         let categoryServicesHtml = 'No services for this category found (or category not selected).';
-        const finalCategoryIdForTest = categoryIdForTest && categoryIdForTest !== "none" ? categoryIdForTest : (categoryIdForTest === "cart" ? allCategoriesSnap.docs[0]?.id : undefined);
+        const finalCategoryIdForTest = categoryIdForTest && categoryIdForTest !== "none" ? categoryIdForTest : (categoryIdForTest === "cart" ? categories[0]?.id : undefined);
 
         if (finalCategoryIdForTest) {
-            const subCatsSnap = await getDocs(query(collection(db, "adminSubCategories"), where("parentId", "==", finalCategoryIdForTest)));
-            const subCatIds = subCatsSnap.docs.map(doc => doc.id);
+            const subCatIds = subCategories.filter(sc => sc.parentId === finalCategoryIdForTest).map(sc => sc.id);
             if (subCatIds.length > 0) {
-                const categoryServicesSnap = await getDocs(query(collection(db, "adminServices"), where("subCategoryId", "in", subCatIds), where("isActive", "==", true), orderBy("name", "asc")));
-                if (!categoryServicesSnap.empty) {
-                    categoryServicesHtml = `<ul>${categoryServicesSnap.docs.map(doc => `<li><a href="${baseUrl}/service/${doc.data().slug}">${doc.data().name}</a></li>`).join('')}</ul>`;
+                const catServices = activeServices.filter(s => subCatIds.includes(s.subCategoryId));
+                if (catServices.length > 0) {
+                    categoryServicesHtml = `<ul>${catServices.map(s => `<li><a href="${baseUrl}/service/${s.slug}">${s.name}</a></li>`).join('')}</ul>`;
                 }
             }
         }

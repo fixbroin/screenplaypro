@@ -9,18 +9,11 @@
 
 import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
+import { gemini15Flash } from '@genkit-ai/googleai';
+import { queryDb } from '@/lib/mysql';
 import { db } from '@/lib/firebase';
+import { doc, getDoc } from 'firebase/firestore';
 import { getBaseUrl } from '@/lib/config';
-import {
-  doc,
-  getDoc,
-  collection,
-  getDocs,
-  query,
-  where,
-  limit,
-  orderBy,
-} from 'firebase/firestore';
 import type {
   FirestoreUser,
   FirestoreBooking,
@@ -168,22 +161,15 @@ function findCategoryIntent(message: string, categories: FirestoreCategory[]): F
 }
 
 /* -------------------------
-   Firestore Fetchers
+   MySQL Fetchers
    ------------------------- */
 async function getLocations(): Promise<LocationData> {
     const baseUrl = getBaseUrl().replace(/\/$/, '');
-    const citiesSnap = await getDocs(query(collection(db, 'cities'), where('isActive', '==', true)));
-    const areasSnap = await getDocs(query(collection(db, 'areas'), where('isActive', '==', true)));
+    const cityRows = await queryDb<any[]>("SELECT data FROM generic_collections WHERE collectionName = 'cities'");
+    const areaRows = await queryDb<any[]>("SELECT data FROM generic_collections WHERE collectionName = 'areas'");
 
-    const cities = citiesSnap.docs.map(d => {
-        const data = d.data() as FirestoreCity;
-        return { name: data.name, slug: data.slug, url: `${baseUrl}/${data.slug}` };
-    });
-
-    const areas = areasSnap.docs.map(d => {
-        const data = d.data() as FirestoreArea;
-        return { name: data.name, slug: data.slug, cityName: data.cityName, url: `${baseUrl}/${data.cityName}/${data.slug}` };
-    });
+    const cities = cityRows.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data).filter((c: any) => c.isActive !== false).map((data: any) => ({ name: data.name, slug: data.slug, url: `${baseUrl}/${data.slug}` }));
+    const areas = areaRows.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data).filter((a: any) => a.isActive !== false).map((data: any) => ({ name: data.name, slug: data.slug, cityName: data.cityName, url: `${baseUrl}/${data.cityName}/${data.slug}` }));
 
     return { cities, areas };
 }
@@ -195,15 +181,13 @@ async function getFullData(): Promise<{
 }> {
   const baseUrl = getBaseUrl().replace(/\/$/, '');
 
-  const [cats, subs, servs] = await Promise.all([
-    getDocs(query(collection(db, 'adminCategories'), where('isActive', '!=', false))),
-    getDocs(query(collection(db, 'adminSubCategories'), where('isActive', '!=', false))),
-    getDocs(query(collection(db, 'adminServices'), where('isActive', '==', true)))
-  ]);
+  const catRows = await queryDb<any[]>("SELECT data FROM generic_collections WHERE collectionName = 'adminCategories'");
+  const subRows = await queryDb<any[]>("SELECT data FROM generic_collections WHERE collectionName = 'adminSubCategories'");
+  const servRows = await queryDb<any[]>("SELECT data FROM generic_collections WHERE collectionName = 'adminServices'");
 
-  const categoriesArr = cats.docs.map(d => ({ id: d.id, ...d.data() } as FirestoreCategory));
-  const subCatsArr = subs.docs.map(d => ({ id: d.id, ...d.data() } as FirestoreSubCategory));
-  const servicesArr = servs.docs.map(d => ({ id: d.id, ...d.data() } as FirestoreService));
+  const categoriesArr = catRows.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data).filter((c: any) => c.isActive !== false) as FirestoreCategory[];
+  const subCatsArr = subRows.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data).filter((s: any) => s.isActive !== false) as FirestoreSubCategory[];
+  const servicesArr = servRows.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data).filter((s: any) => s.isActive !== false) as FirestoreService[];
 
   const flatServiceList: FlatService[] = servicesArr.map((s) => ({
     id: s.id,
@@ -217,24 +201,20 @@ async function getFullData(): Promise<{
 }
 
 async function getWebsiteContent(): Promise<string> {
-    const pages = ['about-us', 'contact-us', 'careers', 'terms-and-conditions', 'privacy-policy'];
+    const pageRows = await queryDb<any[]>("SELECT data FROM generic_collections WHERE collectionName = 'contentPages'");
+    const faqRows = await queryDb<any[]>("SELECT data FROM generic_collections WHERE collectionName = 'adminFAQs'");
+
     const contentParts: string[] = [];
-    
-    for (const slug of pages) {
-        const q = query(collection(db, 'contentPages'), where('slug', '==', slug), limit(1));
-        const snap = await getDocs(q);
-        if (!snap.empty) {
-            const data = snap.docs[0].data() as ContentPage;
+    pageRows.forEach(r => {
+        const data = typeof r.data === 'string' ? JSON.parse(r.data) : r.data;
+        if (data && data.title && data.content) {
             contentParts.push(`${data.title}: ${data.content.substring(0, 500)}...`);
         }
-    }
+    });
 
-    const faqSnap = await getDocs(query(collection(db, 'adminFAQs'), where('isActive', '==', true), limit(5)));
-    if (!faqSnap.empty) {
-        contentParts.push("\nCommon FAQs:\n" + faqSnap.docs.map(d => {
-            const f = d.data() as FirestoreFAQ;
-            return `Q: ${f.question}\nA: ${f.answer}`;
-        }).join('\n'));
+    const activeFaqs = faqRows.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data).filter((f: any) => f.isActive !== false);
+    if (activeFaqs.length > 0) {
+        contentParts.push("\nCommon FAQs:\n" + activeFaqs.slice(0, 5).map((f: any) => `Q: ${f.question}\nA: ${f.answer}`).join('\n'));
     }
 
     return contentParts.join('\n\n');
@@ -247,32 +227,33 @@ async function getUserAndBookings(userId?: string): Promise<{ name: string; emai
   let adminId: string | null = null;
   const bookings: FirestoreBooking[] = [];
 
-  const userSnap = await getDoc(doc(db, 'users', userId));
-  if (userSnap.exists()) {
-    const u = userSnap.data() as Partial<FirestoreUser>;
-    name = (u.displayName || (u as any).fullName || 'Valued Customer') as string;
+  const userRows = await queryDb<any[]>("SELECT * FROM users WHERE id = ?", [userId]);
+  if (userRows.length > 0) {
+    const u = userRows[0];
+    name = u.displayName || u.fullName || 'Valued Customer';
     email = u.email || '';
   }
 
-  const bookingSnap = await getDocs(query(collection(db, 'bookings'), where('userId', '==', userId), orderBy('createdAt', 'desc'), limit(5)));
-  bookingSnap.forEach((bDoc) => {
-    bookings.push({ id: bDoc.id, ...bDoc.data() } as FirestoreBooking);
+  const bookingRows = await queryDb<any[]>("SELECT data FROM generic_collections WHERE collectionName = 'bookings'");
+  bookingRows.forEach(r => {
+    const b = typeof r.data === 'string' ? JSON.parse(r.data) : r.data;
+    if (b && b.userId === userId) {
+      bookings.push(b as FirestoreBooking);
+    }
   });
-  
-  // Find the primary admin UID for chat session lookup
-  const adminQuery = query(collection(db, "users"), where("email", "==", "fixbro.in@gmail.com"), limit(1));
-  const adminSnapshot = await getDocs(adminQuery);
-  if (!adminSnapshot.empty) {
-    adminId = adminSnapshot.docs[0].id;
+
+  const adminRows = await queryDb<any[]>("SELECT id FROM users WHERE email = 'fixbro.in@gmail.com' LIMIT 1");
+  if (adminRows.length > 0) {
+    adminId = adminRows[0].id;
   }
 
   return { name, email, bookings, adminId };
 }
 
 async function getAppConfig(): Promise<AppSettings | null> {
-    const docRef = doc(db, 'webSettings', 'applicationConfig');
-    const docSnap = await getDoc(docRef);
-    return docSnap.exists() ? docSnap.data() as AppSettings : null;
+    const rows = await queryDb<any[]>("SELECT config FROM app_settings WHERE setting_key = 'applicationConfig'");
+    if (rows.length === 0) return null;
+    return typeof rows[0].config === 'string' ? JSON.parse(rows[0].config) : rows[0].config;
 }
 
 /* -------------------------
@@ -444,7 +425,7 @@ const chatAgentFlow = ai.defineFlow(
     });
 
     const response = await ai.generate({
-      model: 'googleai/gemini-2.0-flash',
+      model: gemini15Flash,
       system: systemPrompt,
       prompt: message,
       config: { temperature: 0.4 },

@@ -6,8 +6,6 @@ import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/ca
 import { Tv } from "lucide-react";
 import AdsManagementTab from '@/components/admin/features/AdsManagementTab';
 import type { FirestoreCategory, FirestoreService } from '@/types/firestore';
-import { db } from '@/lib/firebase';
-import { collection, query, orderBy, getDocs } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 
 export default function FeaturesPage() {
@@ -20,17 +18,17 @@ export default function FeaturesPage() {
     const fetchData = async () => {
       setIsLoadingData(true);
       try {
-        const catQuery = query(collection(db, "adminCategories"), orderBy("name", "asc"));
-        const servQuery = query(collection(db, "adminServices"), orderBy("name", "asc"));
-
-        const [catSnap, servSnap] = await Promise.all([
-          getDocs(catQuery).catch(() => ({ docs: [] })),
-          getDocs(servQuery).catch(() => ({ docs: [] }))
+        const [catRes, servRes] = await Promise.all([
+          fetch('/api/db/collections?name=adminCategories').then(r => r.json()).catch(() => ({ success: false })),
+          fetch('/api/db/collections?name=adminServices').then(r => r.json()).catch(() => ({ success: false }))
         ]);
 
-        setCategories(catSnap.docs.map(d => ({ id: d.id, ...d.data() } as FirestoreCategory)));
-        setServices(servSnap.docs.map(d => ({ id: d.id, ...d.data() } as FirestoreService)));
-
+        if (catRes.success && Array.isArray(catRes.data)) {
+          setCategories(catRes.data as FirestoreCategory[]);
+        }
+        if (servRes.success && Array.isArray(servRes.data)) {
+          setServices(servRes.data as FirestoreService[]);
+        }
       } catch (error) {
         console.error("Error fetching data for Ads Management:", error);
       } finally {

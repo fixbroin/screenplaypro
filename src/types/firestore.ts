@@ -1,8 +1,6 @@
 
 import type { Icon as LucideIconType } from 'lucide-react';
-import { Timestamp } from 'firebase/firestore';
-
-export { Timestamp };
+export type Timestamp = any;
 
 declare global {
   interface Window {
@@ -577,6 +575,8 @@ export type LoginMethod = 'email' | 'otp' | 'google';
 
 export interface AppSettings {
   // General
+  heroTitle?: string;
+  heroSubtitle?: string;
   enableMinimumBookingPolicy: boolean;
   minimumBookingAmount: number;
   visitingChargeAmount: number; // This is the DISPLAYED visiting charge
@@ -1585,4 +1585,15 @@ export interface PinCodeAreaMapping {
     order: number;
     createdAt?: Timestamp;
     updatedAt?: Timestamp;
+}
+
+export interface DeletionRequest {
+  id: string;
+  userId: string;
+  userEmail?: string;
+  displayName?: string;
+  reason?: string;
+  status: 'pending' | 'completed' | 'rejected';
+  requestedAt: any;
+  updatedAt?: any;
 }

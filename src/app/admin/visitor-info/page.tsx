@@ -11,11 +11,6 @@ import {
   MousePointer2, Search, Filter, Monitor, Smartphone, Layout
 } from "lucide-react"; 
 import type { FirestoreVisitorInfoLog } from '@/types/firestore';
-import { db } from '@/lib/firebase';
-import { 
-  collection, query, orderBy, Timestamp, limit, startAfter, 
-  getDocs, writeBatch, type DocumentSnapshot 
-} from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow, format } from 'date-fns';
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -73,8 +68,7 @@ const getDeviceIcon = (ua: string) => {
 export default function AdminVisitorInfoPage() {
   const [visitorLogs, setVisitorLogs] = useState<FirestoreVisitorInfoLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [lastVisible, setLastVisible] = useState<DocumentSnapshot | null>(null);
-  const [hasMore, setHasMore] = useState(true);
+  const [hasMore, setHasMore] = useState(false);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -84,20 +78,13 @@ export default function AdminVisitorInfoPage() {
   const fetchInitialLogs = async () => {
     setIsLoading(true);
     try {
-      const logsCollectionRef = collection(db, "visitorInfoLogs");
-      const q = query(logsCollectionRef, orderBy("timestamp", "desc"), limit(ITEMS_PER_PAGE));
-      const querySnapshot = await getDocs(q);
-      
-      const fetchedLogs = querySnapshot.docs.map(docSnap => ({
-        id: docSnap.id,
-        ...docSnap.data(),
-      } as FirestoreVisitorInfoLog));
-      
-      setVisitorLogs(fetchedLogs);
-      setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
-      setHasMore(querySnapshot.docs.length === ITEMS_PER_PAGE);
+      const res = await fetch('/api/db/collections?name=visitorInfoLogs');
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        setVisitorLogs(json.data as FirestoreVisitorInfoLog[]);
+      }
     } catch (error) {
-      console.error("Error fetching initial visitor logs: ", error);
+      console.error("Error fetching visitor logs from MySQL: ", error);
       toast({ title: "Error", description: "Could not fetch visitor logs.", variant: "destructive" });
     } finally {
       setIsLoading(false);
@@ -106,79 +93,23 @@ export default function AdminVisitorInfoPage() {
   
   useEffect(() => {
     fetchInitialLogs();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleLoadMore = async () => {
-    if (!lastVisible || !hasMore || isFetchingMore) return;
-    setIsFetchingMore(true);
-    try {
-      const logsCollectionRef = collection(db, "visitorInfoLogs");
-      const q = query(
-        logsCollectionRef,
-        orderBy("timestamp", "desc"),
-        startAfter(lastVisible),
-        limit(ITEMS_PER_PAGE)
-      );
-      const querySnapshot = await getDocs(q);
-      const newLogs = querySnapshot.docs.map(docSnap => ({
-        id: docSnap.id,
-        ...docSnap.data(),
-      } as FirestoreVisitorInfoLog));
-      
-      setVisitorLogs(prevLogs => [...prevLogs, ...newLogs]);
-      setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
-      setHasMore(querySnapshot.docs.length === ITEMS_PER_PAGE);
-    } catch (error) {
-      console.error("Error fetching more visitor logs: ", error);
-      toast({ title: "Error", description: "Could not fetch more logs.", variant: "destructive" });
-    } finally {
-      setIsFetchingMore(false);
-    }
+    // MySQL returns all logs
+    setHasMore(false);
   };
 
   const handleClearAllLogs = async () => {
     setIsClearing(true);
     try {
-      const logsCollectionRef = collection(db, "visitorInfoLogs");
-      const querySnapshot = await getDocs(logsCollectionRef);
-      
-      if (querySnapshot.empty) {
-        toast({ title: "No Logs", description: "There are no visitor logs to clear.", variant: "default" });
-        setIsClearing(false);
-        return;
-      }
-
-      const batchArray: ReturnType<typeof writeBatch>[] = [];
-      batchArray.push(writeBatch(db));
-      let operationCount = 0;
-      let batchIndex = 0;
-
-      querySnapshot.docs.forEach((doc) => {
-        batchArray[batchIndex].delete(doc.ref);
-        operationCount++;
-        if (operationCount === 499) {
-          batchArray.push(writeBatch(db));
-          batchIndex++;
-          operationCount = 0;
-        }
-      });
-
-      if (operationCount > 0) {
-        batchArray.push(writeBatch(db));
-      }
-
-      for (const batch of batchArray) {
-        await batch.commit();
-      }
-
+      await fetch('/api/db/collections?name=visitorInfoLogs&clearAll=true', { method: 'DELETE' });
       setVisitorLogs([]);
-      setLastVisible(null);
       setHasMore(false);
-      toast({ title: "Logs Cleared", description: "All visitor logs have been successfully deleted." });
+      toast({ title: "Logs Cleared", description: "All visitor info logs have been permanently deleted." });
     } catch (error) {
-      console.error("Error clearing visitor logs: ", error);
-      toast({ title: "Error Clearing Logs", description: (error as Error).message || "Could not clear visitor logs.", variant: "destructive" });
+      console.error("Error clearing logs from MySQL: ", error);
+      toast({ title: "Error Clearing Logs", description: "Could not clear visitor logs.", variant: "destructive" });
     } finally {
       setIsClearing(false);
     }

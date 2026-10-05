@@ -1,12 +1,9 @@
-
 "use client";
 
 import { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
-import { FileText, Loader2, ArrowRight } from "lucide-react";
+import { FileText, ArrowRight } from "lucide-react";
 import type { FirestoreBlogPost } from '@/types/firestore';
-import { db } from '@/lib/firebase';
-import { collection, query, where, orderBy, getDocs } from "firebase/firestore";
 import BlogPostCard from '@/components/blog/BlogPostCard';
 import Link from 'next/link';
 import { useLoading } from '@/contexts/LoadingContext';
@@ -24,7 +21,7 @@ export default function HomeBlogSection() {
   const { showLoading } = useLoading();
   const plugin = React.useRef(Autoplay({ 
     delay: 4000, 
-    stopOnInteraction: false, // Changed to false to allow auto-resume
+    stopOnInteraction: false,
     stopOnMouseEnter: false, 
     stopOnLastSnap: false,
   }));
@@ -33,12 +30,16 @@ export default function HomeBlogSection() {
     const fetchAllPosts = async () => {
       setIsLoading(true);
       try {
-        const postsRef = collection(db, "blogPosts");
-        const q = query(postsRef, where("isPublished", "==", true), orderBy("createdAt", "desc"));
-        const snapshot = await getDocs(q);
-        setPosts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as FirestoreBlogPost)));
+        const res = await fetch('/api/db/collections?name=blogPosts');
+        const data = await res.json();
+        if (data.success && Array.isArray(data.data)) {
+          const published = data.data
+            .filter((p: any) => p.isPublished === true)
+            .sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+          setPosts(published);
+        }
       } catch (error) {
-        console.error("Error fetching blog posts:", error);
+        console.error("Error fetching blog posts from MySQL:", error);
       } finally {
         setIsLoading(false);
       }

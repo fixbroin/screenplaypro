@@ -1,5 +1,4 @@
 import type { Metadata, ResolvingMetadata } from 'next';
-import { adminDb } from '@/lib/firebaseAdmin'; // Corrected import
 import type { GlobalWebSettings, FirestoreSEOSettings } from '@/types/firestore';
 import { getGlobalSEOSettings } from '@/lib/seoServerUtils';
 import HomePageClient from '@/components/home/HomePageClient';

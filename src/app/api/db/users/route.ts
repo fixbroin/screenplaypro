@@ -4,10 +4,17 @@ import { queryDb } from '@/lib/mysql';
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const userId = searchParams.get('userId');
+    const userId = searchParams.get('userId') || searchParams.get('id');
+    const email = searchParams.get('email');
 
     if (userId) {
       const rows = await queryDb<any[]>('SELECT * FROM users WHERE id = ?', [userId]);
+      if (rows.length === 0) return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 });
+      return NextResponse.json({ success: true, user: rows[0] });
+    }
+
+    if (email) {
+      const rows = await queryDb<any[]>('SELECT * FROM users WHERE email = ?', [email]);
       if (rows.length === 0) return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 });
       return NextResponse.json({ success: true, user: rows[0] });
     }
@@ -78,6 +85,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, id });
   } catch (error: any) {
     console.error('Error saving user to MySQL:', error);
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const userId = searchParams.get('userId');
+
+    if (!userId) {
+      return NextResponse.json({ success: false, error: 'User ID is required' }, { status: 400 });
+    }
+
+    await queryDb('DELETE FROM users WHERE id = ?', [userId]);
+    return NextResponse.json({ success: true, message: 'User deleted successfully' });
+  } catch (error: any) {
+    console.error('Error deleting user from MySQL:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }

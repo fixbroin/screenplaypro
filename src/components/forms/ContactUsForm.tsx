@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useForm } from "react-hook-form";
@@ -7,16 +6,11 @@ import * as z from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { User, Mail, Phone, MessageSquare, Loader2, Send } from "lucide-react";
-import { db } from '@/lib/firebase';
-import { collection, addDoc, Timestamp, query, where, getDocs, limit } from 'firebase/firestore';
-import type { FirestoreContactUsInquiry, InquiryStatus, FirestoreNotification } from '@/types/firestore';
 import { useToast } from "@/hooks/use-toast";
 import { useState } from 'react';
-import { triggerPushNotification } from '@/lib/fcmUtils';
-import { ADMIN_EMAIL } from '@/contexts/AuthContext';
 
 const contactUsFormSchema = z.object({
   name: z.string().min(2, { message: "Name must be at least 2 characters." }).max(100, { message: "Name cannot exceed 100 characters."}),
@@ -48,44 +42,22 @@ export default function ContactUsForm() {
   const onSubmit = async (data: ContactUsFormData) => {
     setIsSubmitting(true);
     try {
-      const inquiryData: Omit<FirestoreContactUsInquiry, 'id' | 'repliedByAdminUid' | 'replyMessage' | 'repliedAt'> = {
+      const inquiryId = `inq_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const inquiryData = {
+        id: inquiryId,
         name: data.name,
         email: data.email,
-        phone: data.phone || undefined, // Store as undefined if empty
+        phone: data.phone || undefined,
         message: data.message,
-        submittedAt: Timestamp.now(),
-        status: 'new' as InquiryStatus,
+        submittedAt: new Date().toISOString(),
+        status: 'new',
         source: 'contact_form',
       };
-      const docRef = await addDoc(collection(db, "contactUsSubmissions"), inquiryData);
-      
-      // --- ADMIN NOTIFICATION FOR NEW INQUIRY ---
-      try {
-        const adminQuery = query(collection(db, "users"), where("email", "==", ADMIN_EMAIL), limit(1));
-        const adminSnapshot = await getDocs(adminQuery);
-        if (!adminSnapshot.empty) {
-          const adminId = adminSnapshot.docs[0].id;
-          const adminNotification: Omit<FirestoreNotification, 'id'> = {
-            userId: adminId,
-            title: "New Contact Inquiry",
-            message: `From ${data.name} (${data.email})`,
-            type: "info",
-            href: `/admin/inquiries`,
-            read: false,
-            createdAt: Timestamp.now(),
-          };
-          await addDoc(collection(db, "userNotifications"), adminNotification);
-          triggerPushNotification({
-            userId: adminId,
-            title: adminNotification.title,
-            body: adminNotification.message,
-            href: adminNotification.href
-          }).catch(err => console.error("Error sending admin inquiry push:", err));
-        }
-      } catch (notifyErr) {
-        console.error("Error sending admin inquiry notifications:", notifyErr);
-      }
-      // --- END ADMIN NOTIFICATION ---
+      await fetch('/api/db/collections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ collectionName: 'contactUsSubmissions', id: inquiryId, data: inquiryData })
+      });
 
       toast({
         title: "Message Sent!",
@@ -98,7 +70,7 @@ export default function ContactUsForm() {
       toast({
         title: "Error",
         description: "Could not send your message. Please try again later.",
-        variant: "destructive",
+        variant: "destructive"
       });
     } finally {
       setIsSubmitting(false);
@@ -106,71 +78,71 @@ export default function ContactUsForm() {
   };
 
   return (
-    <Card className="w-full shadow-lg">
+    <Card className="border-primary/10 shadow-lg">
       <CardHeader>
-        <CardTitle className="text-2xl font-headline flex items-center">
-          <MessageSquare className="mr-2 h-6 w-6 text-primary" /> Send Us a Message
-        </CardTitle>
-        <CardDescription>
-          Have questions or need support? Fill out the form below.
-        </CardDescription>
+        <CardTitle className="text-2xl font-black">Get in Touch</CardTitle>
+        <CardDescription>Fill out the form below and we will get back to you as soon as possible.</CardDescription>
       </CardHeader>
       <CardContent>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             <FormField
               control={form.control}
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="flex items-center"><User className="mr-2 h-4 w-4 text-muted-foreground" />Full Name</FormLabel>
+                  <FormLabel className="flex items-center gap-1.5"><User className="h-4 w-4 text-muted-foreground" /> Your Name</FormLabel>
                   <FormControl>
-                    <Input placeholder="e.g., John Doe" {...field} disabled={isSubmitting} />
+                    <Input placeholder="John Doe" {...field} disabled={isSubmitting} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
+
             <FormField
               control={form.control}
               name="email"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="flex items-center"><Mail className="mr-2 h-4 w-4 text-muted-foreground" />Email Address</FormLabel>
+                  <FormLabel className="flex items-center gap-1.5"><Mail className="h-4 w-4 text-muted-foreground" /> Email Address</FormLabel>
                   <FormControl>
-                    <Input type="email" placeholder="you@example.com" {...field} disabled={isSubmitting} />
+                    <Input type="email" placeholder="john@example.com" {...field} disabled={isSubmitting} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
+
             <FormField
               control={form.control}
               name="phone"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="flex items-center"><Phone className="mr-2 h-4 w-4 text-muted-foreground" />Phone Number (Optional)</FormLabel>
+                  <FormLabel className="flex items-center gap-1.5"><Phone className="h-4 w-4 text-muted-foreground" /> Mobile Number (Optional)</FormLabel>
                   <FormControl>
-                    <Input type="tel" placeholder="e.g., +919876543210" {...field} disabled={isSubmitting} />
+                    <Input type="tel" placeholder="+91 9876543210" {...field} disabled={isSubmitting} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
+
             <FormField
               control={form.control}
               name="message"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="flex items-center"><MessageSquare className="mr-2 h-4 w-4 text-muted-foreground" />Your Message</FormLabel>
+                  <FormLabel className="flex items-center gap-1.5"><MessageSquare className="h-4 w-4 text-muted-foreground" /> Your Message</FormLabel>
                   <FormControl>
-                    <Textarea placeholder="How can we help you today?" rows={5} {...field} disabled={isSubmitting} />
+                    <Textarea placeholder="Type your message or inquiry here..." rows={4} {...field} disabled={isSubmitting} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
-            <Button type="submit" className="w-full sm:w-auto" size="lg" disabled={isSubmitting}>
+
+            <Button type="submit" disabled={isSubmitting} className="w-full font-bold">
               {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
               Send Message
             </Button>

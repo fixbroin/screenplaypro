@@ -12,8 +12,6 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter, CardDescription } from "@/components/ui/card";
 import { Loader2, Save, Send, MessageSquare, AlertTriangle } from "lucide-react"; 
 import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase';
-import { doc, getDoc, setDoc, Timestamp } from "firebase/firestore";
 import type { MarketingAutomationSettings } from '@/types/firestore';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -78,10 +76,10 @@ export default function WhatsAppAutomationForm() {
   const loadSettings = useCallback(async () => {
     setIsLoading(true);
     try {
-      const settingsDocRef = doc(db, MARKETING_AUTOMATION_COLLECTION, MARKETING_AUTOMATION_DOC_ID);
-      const docSnap = await getDoc(settingsDocRef);
-      if (docSnap.exists()) {
-        const data = docSnap.data() as MarketingAutomationSettings;
+      const res = await fetch('/api/db/settings?key=marketingAutomation');
+      const json = await res.json();
+      if (json.success && json.data) {
+        const data = json.data as MarketingAutomationSettings;
         form.reset({
             isWhatsAppEnabled: data.isWhatsAppEnabled ?? defaultWhatsAppSettings.isWhatsAppEnabled,
             whatsAppOnSignup: { ...defaultWhatsAppSettings.whatsAppOnSignup, ...data.whatsAppOnSignup },
@@ -107,7 +105,6 @@ export default function WhatsAppAutomationForm() {
   const onSubmit = async (data: WhatsAppAutomationFormData) => {
     setIsSaving(true);
     try {
-      const settingsDocRef = doc(db, MARKETING_AUTOMATION_COLLECTION, MARKETING_AUTOMATION_DOC_ID);
       const dataToSave: Partial<MarketingAutomationSettings> = {
         isWhatsAppEnabled: data.isWhatsAppEnabled,
         whatsAppOnSignup: data.whatsAppOnSignup,
@@ -115,10 +112,14 @@ export default function WhatsAppAutomationForm() {
         whatsAppOnBookingCompleted: data.whatsAppOnBookingCompleted,
         whatsAppOnBookingCancelled: data.whatsAppOnBookingCancelled,
         whatsAppOnPaymentSuccess: data.whatsAppOnPaymentSuccess,
-        updatedAt: Timestamp.now(),
+        updatedAt: new Date().toISOString(),
       };
-      await setDoc(settingsDocRef, dataToSave, { merge: true });
-      toast({ title: "Success", description: "WhatsApp automation settings have been saved." });
+      await fetch('/api/db/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'marketingAutomation', data: dataToSave })
+      });
+      toast({ title: "Success", description: "WhatsApp automation settings saved to MySQL." });
     } catch (error) {
       toast({ title: "Error", description: "Could not save WhatsApp settings.", variant: "destructive" });
     } finally {

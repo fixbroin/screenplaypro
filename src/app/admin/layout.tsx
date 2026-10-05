@@ -26,8 +26,8 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from '@/components/ui/button';
 import { UserCircle, KeyRound, LogOut, Loader2, Bell, ShieldCheck, ChevronDown, Settings2 } from 'lucide-react';
-import { auth, db } from '@/lib/firebase'; 
-import { sendPasswordResetEmail } from 'firebase/auth';
+import { auth } from '@/lib/firebase'; 
+import { sendPasswordResetEmail } from 'firebase/auth'; 
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 import { useUnreadNotificationsCount } from '@/hooks/useUnreadNotificationsCount';
@@ -37,7 +37,6 @@ import AdminFloatingChatButton from '@/components/admin/AdminFloatingChatButton'
 import FloatingAdminChatWindow from '@/components/admin/FloatingAdminChatWindow';
 import { useTotalAdminUnreadChatCount } from '@/hooks/useTotalAdminUnreadChatCount';
 import { useGlobalSettings } from '@/hooks/useGlobalSettings';
-import { collection, query, where, onSnapshot, orderBy, limit, Timestamp, doc, updateDoc } from 'firebase/firestore'; 
 import type { FirestoreNotification } from '@/types/firestore'; 
 import { cn } from '@/lib/utils';
 

@@ -5,8 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Loader2, Trash2, ShieldAlert, AlertTriangle, CheckCircle2, XCircle } from "lucide-react";
-import { db } from '@/lib/firebase';
-import { collection, query, orderBy, getDocs, deleteDoc, doc, onSnapshot } from "firebase/firestore";
+import type { DeletionRequest } from '@/types/firestore';
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from 'date-fns';
 import { getTimestampMillis } from '@/lib/utils';
@@ -23,16 +22,6 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
-interface DeletionRequest {
-  id: string; // doc ID is userId
-  userId: string;
-  userEmail: string;
-  displayName: string;
-  reason: string;
-  status: string;
-  requestedAt?: any;
-}
-
 export default function AdminDeleteRequestsPage() {
   const [requests, setRequests] = useState<DeletionRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -40,35 +29,35 @@ export default function AdminDeleteRequestsPage() {
   const { toast } = useToast();
   const { user } = useAuth();
 
-  useEffect(() => {
-    // Set up a real-time listener for deletion requests
-    const q = query(collection(db, "accountDeletionRequests"), orderBy("requestedAt", "desc"));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const fetchedRequests = snapshot.docs.map(docSnap => ({
-        id: docSnap.id,
-        ...docSnap.data()
-      } as DeletionRequest));
-      setRequests(fetchedRequests);
-      setIsLoading(false);
-    }, (error) => {
-      console.error("Error listening to deletion requests: ", error);
+  const fetchRequests = async () => {
+    setIsLoading(true);
+    try {
+      const res = await fetch('/api/db/collections?name=accountDeletionRequests');
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        setRequests(json.data as DeletionRequest[]);
+      }
+    } catch (error: any) {
+      console.error("Error fetching deletion requests: ", error);
       toast({
         title: "Error loading requests",
         description: error.message,
         variant: "destructive"
       });
+    } finally {
       setIsLoading(false);
-    });
+    }
+  };
 
-    return () => unsubscribe();
-  }, [toast]);
+  useEffect(() => {
+    fetchRequests();
+  }, []);
 
   const handleApproveDeletion = async (targetUserId: string) => {
     if (!user) return;
     setIsProcessing(targetUserId);
 
     try {
-      // Fetch JWT ID Token for secure admin call
       const token = await user.getIdToken();
 
       const response = await fetch('/api/admin/delete-user', {
@@ -85,6 +74,9 @@ export default function AdminDeleteRequestsPage() {
       if (!response.ok || !data.success) {
         throw new Error(data.error || "Failed to process user deletion");
       }
+
+      await fetch(`/api/db/collections?name=accountDeletionRequests&id=${targetUserId}`, { method: 'DELETE' });
+      fetchRequests();
 
       toast({
         title: "Account Deleted Successfully",
@@ -106,7 +98,8 @@ export default function AdminDeleteRequestsPage() {
   const handleRejectRequest = async (targetUserId: string) => {
     setIsProcessing(targetUserId);
     try {
-      await deleteDoc(doc(db, "accountDeletionRequests", targetUserId));
+      await fetch(`/api/db/collections?name=accountDeletionRequests&id=${targetUserId}`, { method: 'DELETE' });
+      setRequests(requests.filter(r => r.id !== targetUserId));
       toast({
         title: "Request Rejected",
         description: "The deletion request has been removed. The user account is safe.",

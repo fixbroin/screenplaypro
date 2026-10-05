@@ -5,8 +5,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Button } from "@/components/ui/button";
 import { Settings, Save, Loader2, MailIcon, PlaySquare, DollarSign, CreditCard, Users } from "lucide-react";
 import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase';
-import { doc, getDoc, setDoc, Timestamp } from "firebase/firestore";
 import { triggerRefresh } from '@/lib/revalidateUtils';
 import type { AppSettings } from '@/types/firestore'; 
 import { defaultAppSettings } from '@/config/appDefaults'; 
@@ -16,32 +14,24 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TooltipProvider } from '@/components/ui/tooltip';
 
-const APP_CONFIG_COLLECTION = "webSettings";
-const APP_CONFIG_DOC_ID = "applicationConfig";
-
 export default function AdminSettingsPage() {
   const { toast } = useToast();
   const [settings, setSettings] = useState<AppSettings>(defaultAppSettings);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
 
-  const loadSettingsFromFirestore = useCallback(async () => {
+  const loadSettings = useCallback(async () => {
     setIsLoadingSettings(true);
     try {
-      const settingsDocRef = doc(db, APP_CONFIG_COLLECTION, APP_CONFIG_DOC_ID);
-      const docSnap = await getDoc(settingsDocRef);
-      if (docSnap.exists()) {
-        const firestoreData = docSnap.data() as Partial<AppSettings>;
-        const mergedSettings = { 
-          ...defaultAppSettings, 
-          ...firestoreData,
-        };
-        setSettings(mergedSettings);
+      const res = await fetch('/api/db/settings?key=applicationConfig');
+      const json = await res.json();
+      if (json.success && json.data) {
+        setSettings({ ...defaultAppSettings, ...json.data });
       } else {
         setSettings(defaultAppSettings);
       }
     } catch (e) {
-      console.error("Failed to load settings from Firestore", e);
+      console.error("Failed to load settings from MySQL", e);
       toast({ title: "Error Loading Settings", description: "Could not load settings from database. Using defaults.", variant: "destructive" });
       setSettings(defaultAppSettings); 
     } finally {
@@ -50,8 +40,8 @@ export default function AdminSettingsPage() {
   }, [toast]);
 
   useEffect(() => {
-    loadSettingsFromFirestore();
-  }, [loadSettingsFromFirestore]);
+    loadSettings();
+  }, [loadSettings]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -76,37 +66,40 @@ export default function AdminSettingsPage() {
     const settingsToSave: AppSettings = {
       ...defaultAppSettings, 
       ...settings, 
-      updatedAt: Timestamp.now(),
+      updatedAt: new Date().toISOString() as any,
     };
     
     try {
-      const settingsDocRef = doc(db, APP_CONFIG_COLLECTION, APP_CONFIG_DOC_ID);
-      await setDoc(settingsDocRef, settingsToSave, { merge: true }); 
+      await fetch('/api/db/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'applicationConfig', data: settingsToSave })
+      });
+
       await triggerRefresh('app-settings');
       await triggerRefresh('global-cache');
       await triggerRefresh('sitemap');
       
       toast({
         title: "Settings Saved",
-        description: sectionName + ' settings have been saved to the database.',
+        description: sectionName + ' settings have been saved to MySQL.',
       });
     } catch (e) {
-      console.error("Failed to save settings to Firestore", e);
+      console.error("Failed to save settings to MySQL", e);
       toast({
         title: "Error Saving Settings",
         description: "Could not save settings to the database.",
         variant: "destructive",
       });
+    } finally {
+      setIsSaving(false);
     }
-    await new Promise(resolve => setTimeout(resolve, 500)); 
-    setIsSaving(false);
   };
 
   if (isLoadingSettings) {
     return (
-      <div className="flex justify-center items-center min-h-[calc(100vh-200px)]">
-        <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <p className="ml-3">Loading application settings...</p>
+      <div className="flex justify-center items-center py-24">
+        <Loader2 className="h-10 w-10 animate-spin text-primary" />
       </div>
     );
   }
@@ -114,211 +107,160 @@ export default function AdminSettingsPage() {
   return (
     <TooltipProvider>
       <div className="space-y-6">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-2xl flex items-center">
-              <Settings className="mr-2 h-6 w-6 text-primary" /> Application Settings
-            </CardTitle>
-            <CardDescription>
-              Configure application settings. Changes here affect the entire application.
-            </CardDescription>
-          </CardHeader>
-        </Card>
-
-        <Tabs defaultValue="general" className="w-full">
-          <div className="relative mb-6">
-            <TabsList className="h-12 w-full justify-start gap-2 bg-transparent p-0 border-b border-border rounded-none">
-              <TabsTrigger 
-                value="general"
-                className="relative h-12 rounded-none border-b-2 border-transparent bg-transparent px-4 pb-3 pt-2 font-semibold text-muted-foreground shadow-none transition-none data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:shadow-none whitespace-nowrap"
-              >
-                <DollarSign className="mr-2 h-4 w-4" /> General
-              </TabsTrigger>
-              <TabsTrigger 
-                value="payment"
-                className="relative h-12 rounded-none border-b-2 border-transparent bg-transparent px-4 pb-3 pt-2 font-semibold text-muted-foreground shadow-none transition-none data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:shadow-none whitespace-nowrap"
-              >
-                <CreditCard className="mr-2 h-4 w-4" /> Payment
-              </TabsTrigger>
-            </TabsList>
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-3xl font-black tracking-tight flex items-center gap-2">
+              <Settings className="h-8 w-8 text-primary" /> General Settings
+            </h1>
+            <p className="text-sm text-muted-foreground">Manage app authentication, email, and platform configuration.</p>
           </div>
+        </div>
 
-          <TabsContent value="general" className="mt-0 focus-visible:outline-none">
+        <Tabs defaultValue="auth" className="w-full">
+          <TabsList className="grid w-full grid-cols-4 max-w-2xl">
+            <TabsTrigger value="auth" className="font-bold flex items-center gap-1.5"><Users className="h-4 w-4" /> Auth</TabsTrigger>
+            <TabsTrigger value="email" className="font-bold flex items-center gap-1.5"><MailIcon className="h-4 w-4" /> SMTP Email</TabsTrigger>
+            <TabsTrigger value="hero" className="font-bold flex items-center gap-1.5"><PlaySquare className="h-4 w-4" /> Hero</TabsTrigger>
+            <TabsTrigger value="payment" className="font-bold flex items-center gap-1.5"><CreditCard className="h-4 w-4" /> Gateway</TabsTrigger>
+          </TabsList>
+
+          {/* AUTH SETTINGS */}
+          <TabsContent value="auth" className="space-y-4 pt-4">
             <Card>
               <CardHeader>
-                <CardTitle>General Settings</CardTitle>
-                <CardDescription>Basic application-wide configurations.</CardDescription>
+                <CardTitle>Authentication Methods</CardTitle>
+                <CardDescription>Enable or disable login options for your users.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                <div className="space-y-4 p-4 border rounded-md shadow-sm">
-                  <h3 className="text-lg font-semibold flex items-center"><Users className="mr-2 h-5 w-5 text-muted-foreground"/>User Profile Settings</h3>
-                  <div className="flex items-center justify-between rounded-lg border p-4">
-                    <div className="space-y-0.5">
-                      <Label htmlFor="allowUsernameEdit" className="text-base">Allow Username Editing</Label>
-                      <p className="text-sm text-muted-foreground">
-                        Enable or disable the ability for users to change their usernames in their profile.
-                      </p>
-                    </div>
-                    <Switch
-                      id="allowUsernameEdit"
-                      name="allowUsernameEdit" 
-                      checked={settings.allowUsernameEdit}
-                      onCheckedChange={(checked) => handleSwitchChange('allowUsernameEdit', checked)}
-                      disabled={isSaving}
-                    />
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label className="text-base font-bold">Email & Password Login</Label>
+                    <p className="text-xs text-muted-foreground">Allow users to log in with email and password.</p>
                   </div>
+                  <Switch
+                    checked={settings.enableEmailPasswordLogin ?? true}
+                    onCheckedChange={(c) => handleSwitchChange('enableEmailPasswordLogin', c)}
+                  />
                 </div>
-
-                <div className="space-y-4 p-4 border rounded-md shadow-sm">
-                  <h3 className="text-lg font-semibold flex items-center"><PlaySquare className="mr-2 h-5 w-5 text-muted-foreground"/>Homepage Hero Carousel</h3>
-                  <div className="flex items-center justify-between rounded-lg border p-4">
-                    <div className="space-y-0.5">
-                      <Label htmlFor="enableHeroCarousel" className="text-base">Enable Hero Carousel</Label>
-                      <p className="text-sm text-muted-foreground">
-                        Show or hide the main slideshow on the homepage.
-                      </p>
-                    </div>
-                    <Switch
-                      id="enableHeroCarousel"
-                      name="enableHeroCarousel" 
-                      checked={settings.enableHeroCarousel}
-                      onCheckedChange={(checked) => handleSwitchChange('enableHeroCarousel', checked)}
-                      disabled={isSaving}
-                    />
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label className="text-base font-bold">Mobile Phone OTP Login</Label>
+                    <p className="text-xs text-muted-foreground">Allow users to sign in via SMS OTP verification.</p>
                   </div>
-                  {settings.enableHeroCarousel && (
-                    <div className="space-y-4 pl-4 border-l-2 border-primary ml-2 pt-4">
-                      <div className="flex items-center justify-between rounded-lg border p-4">
-                        <div className="space-y-0.5">
-                          <Label htmlFor="enableCarouselAutoplay" className="text-base">Enable Autoplay</Label>
-                          <p className="text-sm text-muted-foreground">
-                            Automatically transition between slides.
-                          </p>
-                        </div>
-                        <Switch
-                          id="enableCarouselAutoplay"
-                          name="enableCarouselAutoplay"
-                          checked={settings.enableCarouselAutoplay}
-                          onCheckedChange={(checked) => handleSwitchChange('enableCarouselAutoplay', checked)}
-                          disabled={isSaving}
-                        />
-                      </div>
-                      {settings.enableCarouselAutoplay && (
-                         <div className="space-y-2">
-                          <Label htmlFor="carouselAutoplayDelay">Autoplay Delay (milliseconds)</Label>
-                          <Input
-                            id="carouselAutoplayDelay"
-                            name="carouselAutoplayDelay"
-                            type="number"
-                            value={settings.carouselAutoplayDelay}
-                            onChange={handleInputChange}
-                            placeholder="e.g., 5000"
-                            disabled={isSaving}
-                            min="1000" 
-                          />
-                          <p className="text-xs text-muted-foreground">Time between slide transitions (e.g., 5000 for 5 seconds). Min: 1000ms.</p>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  <Switch
+                    checked={settings.enableOtpLogin ?? true}
+                    onCheckedChange={(c) => handleSwitchChange('enableOtpLogin', c)}
+                  />
                 </div>
-
-                <div className="space-y-4 p-4 border rounded-md shadow-sm">
-                  <h3 className="text-lg font-semibold flex items-center"><MailIcon className="mr-2 h-5 w-5 text-muted-foreground"/>Email Configuration (SMTP)</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                        <Label htmlFor="smtpHost">SMTP Host</Label>
-                        <Input id="smtpHost" name="smtpHost" value={settings.smtpHost} onChange={handleInputChange} placeholder="e.g., smtp.gmail.com" disabled={isSaving}/>
-                    </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="smtpPort">SMTP Port</Label>
-                        <Input id="smtpPort" name="smtpPort" type="text" value={settings.smtpPort} onChange={handleInputChange} placeholder="e.g., 587 or 465" disabled={isSaving}/>
-                    </div>
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label className="text-base font-bold">Google One-Tap / Popup Login</Label>
+                    <p className="text-xs text-muted-foreground">Allow users to sign in with Google account.</p>
                   </div>
-                  <div className="space-y-2">
-                      <Label htmlFor="senderEmail">Sender Email Address</Label>
-                      <Input id="senderEmail" name="senderEmail" type="email" value={settings.senderEmail} onChange={handleInputChange} placeholder="e.g., no-reply@screenplaypro.in" disabled={isSaving}/>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                        <Label htmlFor="smtpUser">SMTP Username</Label>
-                        <Input id="smtpUser" name="smtpUser" value={settings.smtpUser} onChange={handleInputChange} placeholder="Your SMTP username" disabled={isSaving}/>
-                    </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="smtpPass">SMTP Password</Label>
-                        <Input id="smtpPass" name="smtpPass" type="password" value={settings.smtpPass} onChange={handleInputChange} placeholder="Your SMTP password" disabled={isSaving}/>
-                    </div>
-                  </div>
-                  <p className="text-xs text-muted-foreground">Used for sending subscription confirmation emails, expiry renewal reminders, and admin notifications.</p>
+                  <Switch
+                    checked={settings.enableGoogleLogin ?? true}
+                    onCheckedChange={(c) => handleSwitchChange('enableGoogleLogin', c)}
+                  />
                 </div>
-
               </CardContent>
-              <CardFooter className="border-t px-6 py-4">
-                <Button onClick={() => handleSaveSettings("General")} disabled={isSaving}>
-                  {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                  Save General Settings
+              <CardFooter className="border-t pt-4">
+                <Button onClick={() => handleSaveSettings('Authentication')} disabled={isSaving}>
+                  {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  <Save className="mr-2 h-4 w-4" /> Save Auth Settings
                 </Button>
               </CardFooter>
             </Card>
           </TabsContent>
 
-          <TabsContent value="payment">
+          {/* EMAIL SETTINGS */}
+          <TabsContent value="email" className="space-y-4 pt-4">
             <Card>
               <CardHeader>
-                <CardTitle>Payment Gateway Settings</CardTitle>
-                <CardDescription>Configure Razorpay online payment gateway credentials.</CardDescription>
+                <CardTitle>SMTP Email Configuration</CardTitle>
+                <CardDescription>Configure Hostinger or custom SMTP settings for welcome and expiry emails.</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="flex items-center justify-between rounded-lg border p-4">
-                  <div className="space-y-0.5">
-                    <Label htmlFor="enableOnlinePayment" className="text-base">Enable Online Payments (Razorpay)</Label>
-                    <p className="text-sm text-muted-foreground">
-                      Allow customers to pay using online methods like UPI, Cards, Netbanking.
-                    </p>
-                  </div>
-                  <Switch
-                    id="enableOnlinePayment"
-                    name="enableOnlinePayment" 
-                    checked={settings.enableOnlinePayment}
-                    onCheckedChange={(checked) => handleSwitchChange('enableOnlinePayment', checked)}
-                    disabled={isSaving}
-                  />
+              <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>SMTP Host</Label>
+                  <Input name="smtpHost" value={settings.smtpHost || ''} onChange={handleInputChange} placeholder="smtp.hostinger.com" />
                 </div>
-
-                {settings.enableOnlinePayment && (
-                  <div className="space-y-4 pl-4 border-l-2 border-primary ml-2 pt-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="razorpayKeyId">Razorpay Key ID</Label>
-                      <Input
-                        id="razorpayKeyId"
-                        name="razorpayKeyId"
-                        value={settings.razorpayKeyId}
-                        onChange={handleInputChange}
-                        placeholder="rzp_live_xxxxxxxxxxxxxx"
-                        disabled={isSaving}
-                      />
-                      <p className="text-xs text-muted-foreground">If left empty, system falls back to .env RAZORPAY_KEY_ID.</p>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="razorpayKeySecret">Razorpay Key Secret</Label>
-                      <Input
-                        id="razorpayKeySecret"
-                        name="razorpayKeySecret"
-                        type="password"
-                        value={settings.razorpayKeySecret}
-                        onChange={handleInputChange}
-                        placeholder="••••••••••••••••••••••"
-                        disabled={isSaving}
-                      />
-                      <p className="text-xs text-muted-foreground">If left empty, system falls back to .env RAZORPAY_KEY_SECRET.</p>
-                    </div>
-                  </div>
-                )}
+                <div className="space-y-2">
+                  <Label>SMTP Port</Label>
+                  <Input name="smtpPort" type="number" value={settings.smtpPort || 465} onChange={handleInputChange} placeholder="465" />
+                </div>
+                <div className="space-y-2">
+                  <Label>SMTP Username / Email</Label>
+                  <Input name="smtpUser" value={settings.smtpUser || ''} onChange={handleInputChange} placeholder="support@screenplaypro.in" />
+                </div>
+                <div className="space-y-2">
+                  <Label>SMTP Password</Label>
+                  <Input name="smtpPass" type="password" value={settings.smtpPass || ''} onChange={handleInputChange} placeholder="••••••••" />
+                </div>
+                <div className="space-y-2 md:col-span-2">
+                  <Label>Sender Email Address</Label>
+                  <Input name="senderEmail" value={settings.senderEmail || ''} onChange={handleInputChange} placeholder="no-reply@screenplaypro.in" />
+                </div>
               </CardContent>
-              <CardFooter className="border-t px-6 py-4">
-                <Button onClick={() => handleSaveSettings("Payment")} disabled={isSaving}>
-                  {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                  Save Payment Settings
+              <CardFooter className="border-t pt-4">
+                <Button onClick={() => handleSaveSettings('SMTP Email')} disabled={isSaving}>
+                  {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  <Save className="mr-2 h-4 w-4" /> Save Email Settings
+                </Button>
+              </CardFooter>
+            </Card>
+          </TabsContent>
+
+          {/* HERO SETTINGS */}
+          <TabsContent value="hero" className="space-y-4 pt-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Hero Section Settings</CardTitle>
+                <CardDescription>Configure homepage headline and banner carousel delay.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Homepage Main Title</Label>
+                  <Input name="heroTitle" value={settings.heroTitle || ''} onChange={handleInputChange} placeholder="Write Your Masterpiece Screenplay" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Homepage Subtitle</Label>
+                  <Input name="heroSubtitle" value={settings.heroSubtitle || ''} onChange={handleInputChange} placeholder="The ultimate AI-assisted screenplay editor" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Carousel Autoplay Delay (seconds)</Label>
+                  <Input name="carouselAutoplayDelay" type="number" value={settings.carouselAutoplayDelay || 5} onChange={handleInputChange} />
+                </div>
+              </CardContent>
+              <CardFooter className="border-t pt-4">
+                <Button onClick={() => handleSaveSettings('Hero Section')} disabled={isSaving}>
+                  {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  <Save className="mr-2 h-4 w-4" /> Save Hero Settings
+                </Button>
+              </CardFooter>
+            </Card>
+          </TabsContent>
+
+          {/* PAYMENT SETTINGS */}
+          <TabsContent value="payment" className="space-y-4 pt-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Razorpay Payment Gateway</CardTitle>
+                <CardDescription>Configure credentials for accepting payments on subscription plans.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Razorpay Key ID</Label>
+                  <Input name="razorpayKeyId" value={settings.razorpayKeyId || ''} onChange={handleInputChange} placeholder="rzp_live_..." />
+                </div>
+                <div className="space-y-2">
+                  <Label>Razorpay Key Secret</Label>
+                  <Input name="razorpayKeySecret" type="password" value={settings.razorpayKeySecret || ''} onChange={handleInputChange} placeholder="••••••••" />
+                </div>
+              </CardContent>
+              <CardFooter className="border-t pt-4">
+                <Button onClick={() => handleSaveSettings('Payment Gateway')} disabled={isSaving}>
+                  {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  <Save className="mr-2 h-4 w-4" /> Save Payment Settings
                 </Button>
               </CardFooter>
             </Card>

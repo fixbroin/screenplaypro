@@ -2,13 +2,11 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { BellRing, BellOff, CheckCircle2, Info, AlertTriangle, Tag, Loader2, History, Trash2 as TrashIcon, User as UserIcon } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { db } from "@/lib/firebase";
-import { collection, query, where, onSnapshot, orderBy, doc, updateDoc, writeBatch, Timestamp, getDocs, limit } from "firebase/firestore";
 import type { FirestoreNotification } from "@/types/firestore";
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from 'date-fns';
@@ -54,108 +52,47 @@ export default function AdminNotificationsPage() {
     setIsMounted(true);
   }, []);
 
-  // 1. Listen to Admin Notifications
-  useEffect(() => {
-    if (!isMounted || !user || authLoading) {
-      if (!authLoading && !user && isMounted) setIsLoadingAdmin(false);
-      return;
-    }
-
-    if (user.email !== ADMIN_EMAIL) {
-        toast({title: "Access Denied", description: "You are not authorized to view these notifications.", variant: "destructive"});
-        setIsLoadingAdmin(false);
-        setAdminNotifications([]);
-        return;
-    }
-
+  const fetchNotifications = useCallback(async () => {
+    if (!user || authLoading) return;
     setIsLoadingAdmin(true);
-    const notificationsCollectionRef = collection(db, "userNotifications");
-    const q = query(
-      notificationsCollectionRef,
-      where("userId", "==", user.uid),
-      orderBy("createdAt", "desc"),
-      limit(100)
-    );
-
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const fetchedNotifications = querySnapshot.docs.map(docSnap => ({
-        ...docSnap.data(),
-        id: docSnap.id,
-      } as FirestoreNotification));
-      setAdminNotifications(fetchedNotifications);
-      setIsLoadingAdmin(false);
-    }, (error) => {
-      console.error("Error fetching admin notifications: ", error);
-      toast({ title: "Error", description: "Could not fetch admin notifications.", variant: "destructive" });
-      setIsLoadingAdmin(false);
-    });
-
-    return () => unsubscribe();
-  }, [user, authLoading, toast, isMounted]);
-
-  // 2. Listen to System-Wide Notifications
-  useEffect(() => {
-    if (!isMounted || !user || authLoading) {
-      if (!authLoading && !user && isMounted) setIsLoadingSystem(false);
-      return;
-    }
-
-    if (user.email !== ADMIN_EMAIL) {
-        setIsLoadingSystem(false);
-        setSystemNotifications([]);
-        return;
-    }
-
     setIsLoadingSystem(true);
-    const notificationsCollectionRef = collection(db, "userNotifications");
-    const q = query(
-      notificationsCollectionRef,
-      orderBy("createdAt", "desc"),
-      limit(100)
-    );
 
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const fetchedNotifications = querySnapshot.docs.map(docSnap => ({
-        ...docSnap.data(),
-        id: docSnap.id,
-      } as FirestoreNotification));
-      setSystemNotifications(fetchedNotifications);
+    try {
+      const res = await fetch('/api/db/collections?name=userNotifications');
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        const all = json.data as FirestoreNotification[];
+        setSystemNotifications(all);
+        setAdminNotifications(all.filter(n => n.userId === user.uid));
+      }
+    } catch (error) {
+      console.error("Error fetching notifications from MySQL: ", error);
+    } finally {
+      setIsLoadingAdmin(false);
       setIsLoadingSystem(false);
-    }, (error) => {
-      console.error("Error fetching system notifications: ", error);
-      setIsLoadingSystem(false);
-    });
+    }
+  }, [user, authLoading]);
 
-    return () => unsubscribe();
-  }, [user, authLoading, isMounted]);
+  useEffect(() => {
+    if (isMounted) {
+      fetchNotifications();
+    }
+  }, [isMounted, fetchNotifications]);
 
-  // 3. Resolve usernames for recipients
+  // Resolve usernames for recipients
   useEffect(() => {
     const fetchUserNames = async () => {
-      const allUids = [
-        ...adminNotifications.map(n => n.userId),
-        ...systemNotifications.map(n => n.userId)
-      ].filter(Boolean);
-      const uniqueUids = Array.from(new Set(allUids));
-      const newUids = uniqueUids.filter(uid => !userNames[uid]);
-      if (newUids.length === 0) return;
-
-      const resolved: Record<string, string> = { ...userNames };
-      // Batch fetch in chunks of 10
-      for (let i = 0; i < newUids.length; i += 10) {
-        const chunk = newUids.slice(i, i + 10);
-        const q = query(collection(db, "users"), where("uid", "in", chunk));
-        const snap = await getDocs(q);
-        snap.forEach(docSnap => {
-          const data = docSnap.data();
-          resolved[docSnap.id] = data.displayName || data.fullName || "Registered User";
-        });
-      }
-      // Fill in fallback for any not found
-      newUids.forEach(uid => {
-        if (!resolved[uid]) resolved[uid] = "Registered User";
-      });
-      setUserNames(resolved);
+      try {
+        const res = await fetch('/api/db/collections?name=users');
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data)) {
+          const resolved: Record<string, string> = {};
+          json.data.forEach((u: any) => {
+            resolved[u.id] = u.displayName || u.fullName || u.email || "Registered User";
+          });
+          setUserNames(resolved);
+        }
+      } catch (e) {}
     };
 
     if (adminNotifications.length > 0 || systemNotifications.length > 0) {
@@ -166,9 +103,17 @@ export default function AdminNotificationsPage() {
   const handleMarkAsRead = async (notificationId?: string) => {
     if (!user || !notificationId) return;
     
-    const notificationRef = doc(db, "userNotifications", notificationId);
     try {
-      await updateDoc(notificationRef, { read: true });
+      const notification = [...adminNotifications, ...systemNotifications].find(n => n.id === notificationId);
+      if (notification) {
+        const updated = { ...notification, read: true };
+        await fetch('/api/db/collections', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ collectionName: 'userNotifications', id: notificationId, data: updated })
+        });
+        fetchNotifications();
+      }
     } catch (error) {
       console.error("Error marking notification as read: ", error);
       toast({ title: "Error", description: "Could not update notification status.", variant: "destructive" });
@@ -179,17 +124,18 @@ export default function AdminNotificationsPage() {
     if (!user || adminNotifications.filter(n => !n.read).length === 0) return;
     
     showLoading();
-    const batch = writeBatch(db);
-    adminNotifications.forEach(notification => {
-      if (!notification.read && notification.id) {
-        const notificationRef = doc(db, "userNotifications", notification.id);
-        batch.update(notificationRef, { read: true });
-      }
-    });
-
     try {
-      await batch.commit();
+      for (const notification of adminNotifications) {
+        if (!notification.read && notification.id) {
+          await fetch('/api/db/collections', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ collectionName: 'userNotifications', id: notification.id, data: { ...notification, read: true } })
+          });
+        }
+      }
       toast({ title: "Success", description: "All notifications marked as read." });
+      fetchNotifications();
     } catch (error) {
       console.error("Error marking all notifications as read: ", error);
       toast({ title: "Error", description: "Could not mark all as read.", variant: "destructive" });
@@ -202,38 +148,8 @@ export default function AdminNotificationsPage() {
     if (!user) return;
     setIsClearing(true);
     try {
-      const notificationsCollectionRef = collection(db, "userNotifications");
-      const q = query(notificationsCollectionRef, where("userId", "==", user.uid));
-      const querySnapshot = await getDocs(q);
-
-      if (querySnapshot.empty) {
-        toast({ title: "No Notifications", description: "There are no notifications to clear.", variant: "default" });
-        setIsClearing(false);
-        return;
-      }
-
-      const batchArray = [];
-      let currentBatch = writeBatch(db);
-      let currentBatchSize = 0;
-
-      querySnapshot.docs.forEach((doc) => {
-        currentBatch.delete(doc.ref);
-        currentBatchSize++;
-        if (currentBatchSize === 500) {
-          batchArray.push(currentBatch);
-          currentBatch = writeBatch(db);
-          currentBatchSize = 0;
-        }
-      });
-
-      if (currentBatchSize > 0) {
-        batchArray.push(currentBatch);
-      }
-
-      for (const batch of batchArray) {
-        await batch.commit();
-      }
-
+      await fetch('/api/db/collections?name=userNotifications&clearAll=true', { method: 'DELETE' });
+      setAdminNotifications([]);
       toast({ title: "Notifications Cleared", description: "All admin notifications have been cleared." });
     } catch (error) {
       console.error("Error clearing admin notifications: ", error);
@@ -247,37 +163,8 @@ export default function AdminNotificationsPage() {
     if (!user) return;
     setIsClearing(true);
     try {
-      const notificationsCollectionRef = collection(db, "userNotifications");
-      const querySnapshot = await getDocs(notificationsCollectionRef);
-
-      if (querySnapshot.empty) {
-        toast({ title: "No Notifications", description: "There are no notifications to clear.", variant: "default" });
-        setIsClearing(false);
-        return;
-      }
-
-      const batchArray = [];
-      let currentBatch = writeBatch(db);
-      let currentBatchSize = 0;
-
-      querySnapshot.docs.forEach((doc) => {
-        currentBatch.delete(doc.ref);
-        currentBatchSize++;
-        if (currentBatchSize === 500) {
-          batchArray.push(currentBatch);
-          currentBatch = writeBatch(db);
-          currentBatchSize = 0;
-        }
-      });
-
-      if (currentBatchSize > 0) {
-        batchArray.push(currentBatch);
-      }
-
-      for (const batch of batchArray) {
-        await batch.commit();
-      }
-
+      await fetch('/api/db/collections?name=userNotifications&clearAll=true', { method: 'DELETE' });
+      setSystemNotifications([]);
       toast({ title: "System Log Cleared", description: "All system notifications have been cleared." });
     } catch (error) {
       console.error("Error clearing system notifications: ", error);

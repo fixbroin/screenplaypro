@@ -7,8 +7,7 @@
 
 import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
-import { getFirestore, Timestamp } from 'firebase-admin/firestore';
-import { initFirebaseAdmin } from '@/lib/firebase-admin';
+import { queryDb } from '@/lib/mysql';
 import type { FirestoreUser, AppSettings, GlobalWebSettings, FirestoreService, FirestoreCategory } from '@/types/firestore';
 import { sendMarketingEmail } from './sendMarketingEmailFlow';
 import { getBaseUrl } from '@/lib/config';
@@ -58,19 +57,14 @@ const bulkMarketingEmailFlow = ai.defineFlow(
   async (input) => {
     try {
       console.log("====== BULK MARKETING EMAIL FLOW START ======");
-      initFirebaseAdmin();
-      const db = getFirestore();
 
       // 1. Fetch settings (SMTP, company details)
-      const appConfigSnap = await db.collection('webSettings').doc('applicationConfig').get();
-      const globalSettingsSnap = await db.collection('webSettings').doc('global').get();
-      
-      if (!appConfigSnap.exists || !globalSettingsSnap.exists) {
-        throw new Error("SMTP or Global settings not configured in Firestore.");
-      }
-      const appConfig = appConfigSnap.data() as AppSettings;
-      const globalSettings = globalSettingsSnap.data() as GlobalWebSettings;
-      
+      const appConfigRows = await queryDb<any[]>("SELECT config FROM app_settings WHERE setting_key = 'applicationConfig'");
+      const globalSettingsRows = await queryDb<any[]>("SELECT config FROM webSettings WHERE id = 'global'");
+
+      const appConfig: AppSettings = appConfigRows.length > 0 ? (typeof appConfigRows[0].config === 'string' ? JSON.parse(appConfigRows[0].config) : appConfigRows[0].config) : {} as any;
+      const globalSettings: GlobalWebSettings = globalSettingsRows.length > 0 ? (typeof globalSettingsRows[0].config === 'string' ? JSON.parse(globalSettingsRows[0].config) : globalSettingsRows[0].config) : {} as any;
+
       if (!appConfig.smtpHost || !appConfig.senderEmail) {
         throw new Error("SMTP settings are incomplete. Cannot send emails.");
       }
@@ -83,45 +77,40 @@ const bulkMarketingEmailFlow = ai.defineFlow(
       const itemStyle = 'padding: 8px 0; border-bottom: 1px solid #f0f0f0;';
       const linkStyle = 'color: #0B5ED7; text-decoration: none; font-weight: 500;';
 
-      // Popular Content
-      const popularServicesSnap = await db.collection("adminServices").where("isActive", "==", true).orderBy("rating", "desc").limit(5).get();
-      const popularServicesHtml = `<ul style="${listStyle}">${popularServicesSnap.docs.map(doc => `<li style="${itemStyle}"><a href="${baseUrl}/service/${doc.data().slug}" style="${linkStyle}">${doc.data().name}</a></li>`).join('')}</ul>`;
+      // Fetch services & categories from MySQL
+      const serviceRows = await queryDb<any[]>("SELECT data FROM generic_collections WHERE collectionName = 'adminServices'");
+      const categoryRows = await queryDb<any[]>("SELECT data FROM generic_collections WHERE collectionName = 'adminCategories'");
+      const subCategoryRows = await queryDb<any[]>("SELECT data FROM generic_collections WHERE collectionName = 'adminSubCategories'");
 
-      const popularCategoriesSnap = await db.collection("adminCategories").orderBy("order", "asc").limit(5).get();
-      const popularCategoriesHtml = `<ul style="${listStyle}">${popularCategoriesSnap.docs.map(doc => `<li style="${itemStyle}"><a href="${baseUrl}/category/${doc.data().slug}" style="${linkStyle}">${doc.data().name}</a></li>`).join('')}</ul>`;
+      const services: FirestoreService[] = serviceRows.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data);
+      const categories: FirestoreCategory[] = categoryRows.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data);
+      const subCategories: any[] = subCategoryRows.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data);
 
-      // All Content
-      const allServicesSnap = await db.collection("adminServices").where("isActive", "==", true).orderBy("name", "asc").get();
-      const allServicesHtml = `<ul style="${listStyle}">${allServicesSnap.docs.map(doc => `<li style="${itemStyle}"><a href="${baseUrl}/service/${doc.data().slug}" style="${linkStyle}">${doc.data().name}</a></li>`).join('')}</ul>`;
+      const activeServices = services.filter(s => s.isActive);
+      const popularServicesHtml = `<ul style="${listStyle}">${activeServices.slice(0, 5).map(s => `<li style="${itemStyle}"><a href="${baseUrl}/service/${s.slug}" style="${linkStyle}">${s.name}</a></li>`).join('')}</ul>`;
+      const popularCategoriesHtml = `<ul style="${listStyle}">${categories.slice(0, 5).map(c => `<li style="${itemStyle}"><a href="${baseUrl}/category/${c.slug}" style="${linkStyle}">${c.name}</a></li>`).join('')}</ul>`;
 
-      const allCategoriesSnap = await db.collection("adminCategories").orderBy("order", "asc").get();
-      const allCategoriesHtml = `<ul style="${listStyle}">${allCategoriesSnap.docs.map(doc => `<li style="${itemStyle}"><a href="${baseUrl}/category/${doc.data().slug}" style="${linkStyle}">${doc.data().name}</a></li>`).join('')}</ul>`;
+      const allServicesHtml = `<ul style="${listStyle}">${activeServices.map(s => `<li style="${itemStyle}"><a href="${baseUrl}/service/${s.slug}" style="${linkStyle}">${s.name}</a></li>`).join('')}</ul>`;
+      const allCategoriesHtml = `<ul style="${listStyle}">${categories.map(c => `<li style="${itemStyle}"><a href="${baseUrl}/category/${c.slug}" style="${linkStyle}">${c.name}</a></li>`).join('')}</ul>`;
 
-      // New: Category-specific services
       let categoryServicesHtml = '';
       if (input.categoryIdForServices) {
-        const subCatsSnap = await db.collection("adminSubCategories").where("parentId", "==", input.categoryIdForServices).get();
-        const subCatIds = subCatsSnap.docs.map(doc => doc.id);
+        const subCatIds = subCategories.filter(sc => sc.parentId === input.categoryIdForServices).map(sc => sc.id);
         if (subCatIds.length > 0) {
-            const categoryServicesSnap = await db.collection("adminServices").where("subCategoryId", "in", subCatIds).where("isActive", "==", true).orderBy("name", "asc").get();
-            categoryServicesHtml = `<ul style="${listStyle}">${categoryServicesSnap.docs.map(doc => `<li style="${itemStyle}"><a href="${baseUrl}/service/${doc.data().slug}" style="${linkStyle}">${doc.data().name}</a></li>`).join('')}</ul>`;
+            const categoryServices = activeServices.filter(s => subCatIds.includes(s.subCategoryId));
+            categoryServicesHtml = `<ul style="${listStyle}">${categoryServices.map(s => `<li style="${itemStyle}"><a href="${baseUrl}/service/${s.slug}" style="${linkStyle}">${s.name}</a></li>`).join('')}</ul>`;
         }
       }
 
       // 2. Fetch target users
       let users: FirestoreUser[] = [];
       if (input.targetUserIds === 'all') {
-        const usersSnapshot = await db.collection('users').get();
-        users = usersSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as FirestoreUser));
+        const userRows = await queryDb<any[]>("SELECT * FROM users");
+        users = userRows as FirestoreUser[];
       } else if (Array.isArray(input.targetUserIds) && input.targetUserIds.length > 0) {
-        const userIds = input.targetUserIds;
-        for (let i = 0; i < userIds.length; i += 30) {
-            const chunk = userIds.slice(i, i + 30);
-            if (chunk.length > 0) {
-              const usersSnapshot = await db.collection('users').where('__name__', 'in', chunk).get();
-              users.push(...usersSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as FirestoreUser)));
-            }
-        }
+        const placeholders = input.targetUserIds.map(() => '?').join(',');
+        const userRows = await queryDb<any[]>(`SELECT * FROM users WHERE id IN (${placeholders})`, input.targetUserIds);
+        users = userRows as FirestoreUser[];
       }
 
       if (users.length === 0) {

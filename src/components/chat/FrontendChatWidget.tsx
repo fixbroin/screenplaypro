@@ -39,12 +39,11 @@ export default function FrontendChatWidget() {
     const fetchSupportAdminUid = async () => {
       setIsLoadingAdminProfile(true);
       try {
-        const adminQuery = query(collection(db, "users"), where("email", "==", ADMIN_EMAIL), limit(1));
-        const adminSnapshot = await getDocs(adminQuery);
-        if (!adminSnapshot.empty) {
-          setSupportAdminProfile({ uid: adminSnapshot.docs[0].id });
+        const adminRes = await fetch(`/api/db/users?email=${encodeURIComponent(ADMIN_EMAIL)}`);
+        const adminJson = await adminRes.json();
+        if (adminJson.success && adminJson.user) {
+          setSupportAdminProfile({ uid: adminJson.user.id });
         } else {
-          console.warn(`FrontendChatWidget: Admin user with email ${ADMIN_EMAIL} not found. Chat may not function correctly for unread counts.`);
           setSupportAdminProfile({ uid: 'fallback_admin_uid' });
         }
       } catch (error) {

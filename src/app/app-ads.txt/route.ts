@@ -1,35 +1,28 @@
-
-// src/app/ads.txt/route.ts
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
-import type { MarketingSettings } from '@/types/firestore';
+import { queryDb } from '@/lib/mysql';
 
-const MARKETING_CONFIG_COLLECTION = "webSettings";
-const MARKETING_CONFIG_DOC_ID = "marketingConfiguration";
-
-export const dynamic = 'force-dynamic'; // Ensure this route is always dynamically rendered
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const settingsDocRef = doc(db, MARKETING_CONFIG_COLLECTION, MARKETING_CONFIG_DOC_ID);
-    const docSnap = await getDoc(settingsDocRef);
-
+    const rows = await queryDb<any[]>('SELECT setting_value FROM app_settings WHERE setting_key = ?', ['marketingConfiguration']);
     let adsTxtContent = "";
-    if (docSnap.exists()) {
-      const settings = docSnap.data() as MarketingSettings;
-      adsTxtContent = settings.adsTxtContent || "";
+    if (rows && rows.length > 0) {
+      try {
+        const settings = typeof rows[0].setting_value === 'string' ? JSON.parse(rows[0].setting_value) : rows[0].setting_value;
+        adsTxtContent = settings?.adsTxtContent || "";
+      } catch (e) {}
     }
 
     return new NextResponse(adsTxtContent, {
       status: 200,
       headers: {
         'Content-Type': 'text/plain; charset=utf-8',
-        'Cache-Control': 'public, max-age=3600, stale-while-revalidate=86400', // Cache for 1 day
+        'Cache-Control': 'public, max-age=3600, stale-while-revalidate=86400',
       },
     });
   } catch (error) {
-    console.error("Error fetching ads.txt content:", error);
+    console.error("Error fetching ads.txt content from MySQL:", error);
     return new NextResponse("Error fetching ads.txt content.", {
       status: 500,
       headers: {
@@ -38,5 +31,3 @@ export async function GET() {
     });
   }
 }
-
-    

@@ -260,7 +260,7 @@ export default function SlideshowForm({
           <FormLabel>Slide Image <span className="text-destructive">*</span></FormLabel>
           {displayPreviewUrl ? (
             <div className="my-2 relative w-full h-40 rounded-md overflow-hidden border bg-muted/10">
-              <NextImage src={displayPreviewUrl} alt="Current slide image" fill className="object-contain" data-ai-hint={form.watch('imageHint') || "slide image preview"} unoptimized={displayPreviewUrl.startsWith('blob:')} sizes="(max-width: 640px) 100vw, 50vw" />
+              <NextImage src={displayPreviewUrl} alt="Current slide image" fill className="object-contain" data-ai-hint={form.watch('imageHint') || "slide image preview"} unoptimized={displayPreviewUrl.startsWith('blob:') || displayPreviewUrl.startsWith('/uploads/') || displayPreviewUrl.startsWith('data:')} sizes="(max-width: 640px) 100vw, 50vw" />
             </div>
           ) : (
             <div className="my-2 flex items-center justify-center w-full h-40 rounded-md border border-dashed bg-muted/10"><ImageIconLucide className="h-10 w-10 text-muted-foreground" /></div>

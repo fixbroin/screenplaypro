@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { queryDb } from './mysql';
 
 function base64UrlEncode(str: string | Buffer): string {
   const buf = typeof str === 'string' ? Buffer.from(str) : str;
@@ -62,20 +63,16 @@ export async function getGoogleIndexingToken(): Promise<string> {
   return tokenData.access_token;
 }
 
-import { adminDb } from './firebaseAdmin';
-import { Timestamp } from 'firebase-admin/firestore';
-
 async function logGoogleIndexing(url: string, type: string, status: 'success' | 'failure', errorMsg?: string) {
   try {
-    await adminDb.collection('googleIndexingLogs').add({
-      url,
-      type,
-      status,
-      error: errorMsg || null,
-      processedDate: Timestamp.now()
-    });
+    const docId = `log_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const fullData = { url, type, status, error: errorMsg || null, processedDate: new Date().toISOString() };
+    await queryDb(
+      `INSERT INTO generic_collections (id, collection_name, data) VALUES (?, ?, ?)`,
+      [docId, 'googleIndexingLogs', JSON.stringify(fullData)]
+    );
   } catch (err) {
-    console.error("Failed to write indexing log to Firestore:", err);
+    console.error("Failed to write indexing log to MySQL:", err);
   }
 }
 

@@ -106,25 +106,34 @@ export default function LoginPage() {
 
   const setupAndRenderRecaptcha = async (): Promise<RecaptchaVerifier> => {
     if (recaptchaVerifierRef.current) {
+      try {
         recaptchaVerifierRef.current.clear();
+      } catch (e) {
+        console.warn("Error clearing existing recaptcha verifier:", e);
+      }
+      recaptchaVerifierRef.current = null;
     }
     
     const recaptchaContainer = document.getElementById('recaptcha-container');
     if (!recaptchaContainer) {
-        throw new Error("reCAPTCHA container not found.");
+      throw new Error("reCAPTCHA container not found.");
     }
+    recaptchaContainer.innerHTML = '';
     
     try {
-        const verifier = new RecaptchaVerifier(auth, recaptchaContainer, {
-            'size': 'invisible',
-            'callback': () => console.log("reCAPTCHA solved for login."),
-        });
-        await verifier.render();
-        recaptchaVerifierRef.current = verifier;
-        return verifier;
-    } catch (e) {
-        console.error("Error setting up login reCAPTCHA:", e);
-        throw new Error("Failed to initialize reCAPTCHA. Please check your connection and refresh.");
+      const verifier = new RecaptchaVerifier(auth, recaptchaContainer, {
+        'size': 'invisible',
+        'callback': () => console.log("reCAPTCHA solved for login."),
+        'expired-callback': () => {
+          console.log("reCAPTCHA expired.");
+        }
+      });
+      await verifier.render();
+      recaptchaVerifierRef.current = verifier;
+      return verifier;
+    } catch (e: any) {
+      console.error("Error setting up login reCAPTCHA:", e);
+      throw new Error(e.message || "Failed to initialize reCAPTCHA.");
     }
   };
 
@@ -138,9 +147,17 @@ export default function LoginPage() {
       const result = await signInWithPhoneNumber(auth, fullPhoneNumber, verifier);
       setConfirmationResult(result);
       setPhoneFormStage('otp');
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error sending OTP:", error);
-      phoneForm.setError("phone", { type: "manual", message: "Failed to send OTP. Check number or try again." });
+      let errMsg = "Failed to send OTP. Check number or try again.";
+      if (error?.code === 'auth/operation-not-allowed') {
+        errMsg = "SMS region disabled in Firebase. Enable India (+91) in Firebase Console > Authentication > Settings > SMS Region Policy.";
+      } else if (error?.code === 'auth/internal-error' || error?.code === 'auth/invalid-app-credential') {
+        errMsg = "reCAPTCHA verification error. Please refresh and try again.";
+      } else if (error?.message) {
+        errMsg = error.message;
+      }
+      phoneForm.setError("phone", { type: "manual", message: errMsg });
     } finally {
       setIsSendingOtp(false);
     }

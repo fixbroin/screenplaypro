@@ -1,9 +1,6 @@
+import type { UserActivityEventType, UserActivityEventData } from '@/types/firestore';
+import { triggerRefresh } from './revalidateUtils';
 
-import { db } from '@/lib/firebase';
-import { collection, Timestamp, doc, setDoc, getDoc } from 'firebase/firestore'; 
-import type { UserActivity, UserActivityEventType, UserActivityEventData, FeaturesConfiguration } from '@/types/firestore';
-
-// Helper function to remove undefined properties from an object recursively
 const removeUndefinedProps = (obj: any): any => {
   if (Array.isArray(obj)) {
     return obj.map(removeUndefinedProps);
@@ -18,11 +15,6 @@ const removeUndefinedProps = (obj: any): any => {
   return obj;
 };
 
-// Simple cache for logging enabled state to avoid excessive Firestore reads
-let isLoggingEnabledCache: boolean | null = null;
-let lastCacheUpdate: number = 0;
-const CACHE_TTL = 60 * 60 * 1000; // 1 hour
-
 const isBot = (): boolean => {
     if (typeof window === 'undefined') return true;
     const botPatterns = [
@@ -34,50 +26,6 @@ const isBot = (): boolean => {
     return botPatterns.some(pattern => ua.includes(pattern));
 };
 
-const checkIsLoggingEnabled = async (): Promise<boolean> => {
-    // If it's a bot, we don't even care if logging is enabled, we skip it
-    if (isBot()) return false;
-
-    // Check session storage first for client-side persistence
-    if (typeof window !== 'undefined') {
-        try {
-            const sessionCache = sessionStorage.getItem('fb-logging-enabled');
-            if (sessionCache !== null) {
-                return sessionCache === 'true';
-            }
-        } catch (e) {}
-    }
-
-    const now = Date.now();
-    if (isLoggingEnabledCache !== null && (now - lastCacheUpdate < CACHE_TTL)) {
-        return isLoggingEnabledCache;
-    }
-
-    try {
-        const configDocRef = doc(db, 'webSettings', 'featuresConfiguration');
-        const docSnap = await getDoc(configDocRef);
-        let isEnabled = true;
-        if (docSnap.exists()) {
-            const data = docSnap.data() as FeaturesConfiguration;
-            isEnabled = data.enableUserActivityLogging !== false;
-        }
-        
-        isLoggingEnabledCache = isEnabled;
-        lastCacheUpdate = now;
-
-        if (typeof window !== 'undefined') {
-            try { sessionStorage.setItem('fb-logging-enabled', String(isEnabled)); } catch (e) {}
-        }
-
-        return isEnabled;
-    } catch (error) {
-        console.error("ActivityLogger: Error checking enabled state:", error);
-        return true; 
-    }
-};
-
-import { triggerRefresh } from './revalidateUtils';
-
 export const logUserActivity = async (
   eventType: UserActivityEventType,
   eventData: UserActivityEventData,
@@ -85,56 +33,34 @@ export const logUserActivity = async (
   guestId?: string | null,
   userDisplayName?: string | null
 ): Promise<void> => {
-  if (!userId && !guestId) {
-    return;
-  }
-
-  // Check if logging is enabled in Admin Panel
-  const isEnabled = await checkIsLoggingEnabled();
-  if (!isEnabled) {
-      return;
-  }
+  if (!userId && !guestId) return;
+  if (isBot()) return;
 
   try {
-    // Denormalize: Include name directly to save reads later
     const finalDisplayName = userDisplayName || eventData.fullName || (userId ? "Registered User" : "Guest User");
+    const docId = `act_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
-    const activityData: any = {
+    const activityData = {
+      id: docId,
       userId: userId || null,
       guestId: guestId || null,
       userDisplayName: finalDisplayName,
       eventType,
       eventData: removeUndefinedProps(eventData),
-      timestamp: Timestamp.now(),
+      timestamp: new Date().toISOString(),
       userAgent: typeof window !== 'undefined' ? navigator.userAgent : 'server',
     };
 
-    const userActivitiesCollectionRef = collection(db, 'userActivities');
-    const newActivityDocRef = doc(userActivitiesCollectionRef);
-    await setDoc(newActivityDocRef, activityData);
+    await fetch('/api/db/collections', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ collectionName: 'userActivities', id: docId, data: activityData })
+    });
 
-    // Smart Sync: If it's a major event, tell the server to refresh the activity cache
     if (['newBooking', 'newUser', 'userLogin'].includes(eventType)) {
-        await triggerRefresh('users');
+      await triggerRefresh('users');
     }
-
   } catch (error) {
-    // Log the raw error object first for better inspection in browser console
-    console.error('Raw error object from Firestore setDoc in activityLogger:', error);
-    
-    // Then log the structured error message
-    console.error(
-      'Error logging user activity to Firestore (using setDoc):', 
-      JSON.stringify({ 
-        error: error instanceof Error ? { message: error.message, name: error.name, stack: error.stack?.substring(0, 500) } : String(error), 
-        eventType, 
-        // Ensure eventData is serializable and not too large for logs
-        eventData: typeof eventData === 'object' ? JSON.parse(JSON.stringify(eventData, (key, value) => 
-          typeof value === 'string' && value.length > 100 ? value.substring(0,100) + '...' : value
-        )) : eventData,
-        userId, 
-        guestId 
-      }, null, 2)
-    );
+    console.error('Error logging user activity to MySQL:', error);
   }
 };

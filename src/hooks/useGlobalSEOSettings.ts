@@ -1,8 +1,6 @@
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
-import { db } from '@/lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
 import type { FirestoreSEOSettings } from '@/types/firestore';
 import { defaultSeoValues } from '@/lib/seoUtils';
 import { getCache, setCache } from '@/lib/client-cache';
@@ -39,31 +37,15 @@ export function useGlobalSEOSettings() {
 
     const fetchSEO = async () => {
       try {
-        // Smart Cache Logic: Check global cache version (1 read)
-        const versionDocRef = doc(db, "appConfiguration", "cacheVersions");
-        const versionSnap = await getDoc(versionDocRef);
-        const remoteVersion = versionSnap.exists() ? (versionSnap.data().global || 0) : 0;
-        
-        const localVersion = parseInt(localStorage.getItem(`${CACHE_KEY}-version`) || "0");
-        const cached = getCache<FirestoreSEOSettings>(CACHE_KEY, true);
-        
-        if (cached && !isAdmin && remoteVersion <= localVersion) {
-            setSeoSettings(cached);
-            setIsLoading(false);
-            hasLoadedRef.current = true;
-            return;
-        }
-
-        const seoDocRef = doc(db, 'webSettings', 'seoConfiguration');
-        const docSnap = await getDoc(seoDocRef);
-        if (docSnap.exists()) {
-          const data = { ...defaultSeoValues, ...docSnap.data() } as FirestoreSEOSettings;
+        const res = await fetch('/api/db/settings?key=seoConfiguration');
+        const json = await res.json();
+        if (json.success && json.data) {
+          const data = { ...defaultSeoValues, ...json.data } as FirestoreSEOSettings;
           setSeoSettings(data);
           setCache(CACHE_KEY, data, true);
-          localStorage.setItem(`${CACHE_KEY}-version`, remoteVersion.toString());
         }
       } catch (err) {
-        console.error("Error fetching SEO settings:", err);
+        console.error("Error fetching SEO settings from MySQL:", err);
       } finally {
         setIsLoading(false);
         hasLoadedRef.current = true;

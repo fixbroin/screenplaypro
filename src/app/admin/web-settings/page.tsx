@@ -11,8 +11,6 @@ import { Label } from "@/components/ui/label";
 import { Settings2, Save, Loader2, AlertTriangle, Building, Image as ImageIcon, FileText, ExternalLink, Trash2, Facebook, Instagram, Linkedin, Youtube, TwitterIcon, Heading1, Heading2, Bold, List, Link as LinkIcon, Type, ImagePlus, Copy, Check, Pilcrow } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from '@/hooks/use-toast';
-import { db, storage } from '@/lib/firebase';
-import { doc, getDoc, setDoc, Timestamp, collection, query, orderBy, onSnapshot } from "firebase/firestore";
 import { triggerRefresh } from '@/lib/revalidateUtils';
 import { uploadLocalImage, deleteLocalImage } from '@/lib/fileUploadUtils';
 import type { GlobalWebSettings, ContentPage } from '@/types/firestore';
@@ -71,18 +69,13 @@ const socialMediaLinksSchema = z.object({
 type SocialMediaLinksFormData = z.infer<typeof socialMediaLinksSchema>;
 
 
-const knownPageSlugs = ["about-us", "contact-us", "careers", "terms-and-conditions", "privacy-policy", "faq", "service-disclaimer", "cancellation-policy", "damage-and-claims-policy", "screenplay-pro-privacy-policy"];
+const knownPageSlugs = ["about-us", "contact-us", "terms-and-conditions", "privacy-policy", "cancellation-policy"];
 const pageDisplayNames: Record<string, string> = {
   "about-us": "About Us",
   "contact-us": "Contact Us",
-  "careers": "Careers",
   "terms-and-conditions": "Terms and Conditions",
   "privacy-policy": "Privacy Policy",
-  "faq": "FAQ",
-  "service-disclaimer": "Service Disclaimer",
   "cancellation-policy": "Cancellation Policy",
-  "damage-and-claims-policy": "Damage & Claims Policy",
-  "screenplay-pro-privacy-policy": "Screenplay Pro Privacy Policy",
 };
 
 
@@ -155,10 +148,10 @@ export default function WebSettingsPage() {
   const loadGlobalSettings = useCallback(async () => {
     setIsLoading(true);
     try {
-      const settingsDocRef = doc(db, WEB_SETTINGS_COLLECTION, WEB_SETTINGS_DOC_ID);
-      const docSnap = await getDoc(settingsDocRef);
-      if (docSnap.exists()) {
-        const data = docSnap.data() as GlobalWebSettings;
+      const res = await fetch('/api/db/web-settings');
+      const json = await res.json();
+      if (json.success && json.settings) {
+        const data = json.settings as GlobalWebSettings;
         setGlobalSettings(data);
         setOriginalGlobalSettings(data);
         generalInfoForm.reset({
@@ -182,21 +175,6 @@ export default function WebSettingsPage() {
         setLogoPreview(data.logoUrl || null);
         setFaviconPreview(data.faviconUrl || null);
         setWebsiteIconPreview(data.websiteIconUrl || null);
-      } else {
-        generalInfoForm.reset({ 
-          websiteName: "", 
-          contactEmail: "", 
-          contactMobile: "", 
-          address: "", 
-          logoImageHint: "", 
-          websiteIconImageHint: "",
-          showContactMobile: true,
-          showContactEmail: true,
-          showContactAddress: true
-        });
-        socialMediaForm.reset({ facebook: "", instagram: "", twitter: "", linkedin: "", youtube: "" });
-        setLogoPreview(null); setFaviconPreview(null); setWebsiteIconPreview(null);
-        setOriginalGlobalSettings({});
       }
     } catch (error) {
       console.error("Error loading global settings:", error);
@@ -208,44 +186,38 @@ export default function WebSettingsPage() {
 
   const loadContentPages = useCallback(async () => {
      try {
-      const q = query(collection(db, CONTENT_PAGES_COLLECTION), orderBy("title", "asc"));
-      const unsubscribe = onSnapshot(q, (querySnapshot) => {
-        const pages: ContentPage[] = [];
-        querySnapshot.forEach((doc) => {
-          pages.push({ id: doc.id, ...doc.data() } as ContentPage);
-        });
-        setContentPages(pages);
-        
-        knownPageSlugs.forEach(async (slug) => {
-          if (!pages.find(p => p.slug === slug)) {
-            const newPageData: Omit<ContentPage, 'id'> = {
-              slug: slug,
-              title: pageDisplayNames[slug] || slug.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
-              content: `Content for ${pageDisplayNames[slug] || slug} coming soon.`,
-              updatedAt: Timestamp.now(),
-            };
-            try {
-              await setDoc(doc(db, CONTENT_PAGES_COLLECTION, slug), newPageData);
-            } catch (e) { console.error(`Error creating placeholder for ${slug}:`, e);}
-          }
-        });
-      });
-      return unsubscribe;
+      const res = await fetch('/api/db/collections?name=contentPages');
+      const json = await res.json();
+      let pages: ContentPage[] = json.success && Array.isArray(json.data) ? json.data : [];
+      
+      for (const slug of knownPageSlugs) {
+        if (!pages.find(p => p.slug === slug)) {
+          const newPageData: Omit<ContentPage, 'id'> = {
+            slug: slug,
+            title: pageDisplayNames[slug] || slug.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+            content: `Content for ${pageDisplayNames[slug] || slug} coming soon.`,
+            updatedAt: new Date().toISOString(),
+          };
+          try {
+            await fetch('/api/db/collections', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ collectionName: 'contentPages', id: slug, data: newPageData })
+            });
+            pages.push({ id: slug, ...newPageData } as ContentPage);
+          } catch (e) { console.error(`Error creating placeholder for ${slug}:`, e);}
+        }
+      }
+      setContentPages(pages);
     } catch (error) {
       console.error("Error loading content pages:", error);
       toast({ title: "Error", description: "Could not load content pages.", variant: "destructive" });
     }
-    return () => {};
   }, [toast]);
 
   useEffect(() => {
     loadGlobalSettings();
-    const unsubscribeContentPages = loadContentPages();
-    return () => {
-      if (unsubscribeContentPages && typeof unsubscribeContentPages === 'function') {
-        (unsubscribeContentPages as any)();
-      }
-    };
+    loadContentPages();
   }, [loadGlobalSettings, loadContentPages]);
 
   useEffect(() => {
@@ -274,7 +246,6 @@ export default function WebSettingsPage() {
   const handleSaveGeneralInfo = async (data: GeneralInfoFormData) => {
     setIsSaving(true);
     try {
-      const settingsDocRef = doc(db, WEB_SETTINGS_COLLECTION, WEB_SETTINGS_DOC_ID);
       const updateData: Partial<GlobalWebSettings> = {
         websiteName: data.websiteName,
         contactEmail: data.contactEmail,
@@ -285,7 +256,7 @@ export default function WebSettingsPage() {
         showContactMobile: data.showContactMobile ?? true,
         showContactEmail: data.showContactEmail ?? true,
         showContactAddress: data.showContactAddress ?? true,
-        updatedAt: Timestamp.now(),
+        updatedAt: new Date().toISOString(),
       };
       const merged = { ...globalSettings, ...updateData };
       await fetch('/api/db/web-settings', {
@@ -293,12 +264,11 @@ export default function WebSettingsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(merged)
       });
-      try { await setDoc(settingsDocRef, updateData, { merge: true }); } catch (e) {}
       await triggerRefresh('web-settings');
       await triggerRefresh('global-cache');
       await triggerRefresh('sitemap');
-      setGlobalSettings(prev => ({ ...prev, ...updateData }));
-      setOriginalGlobalSettings(prev => ({...prev, ...updateData}));
+      setGlobalSettings(merged);
+      setOriginalGlobalSettings(merged);
       toast({ title: "Success", description: "General information saved to MySQL." });
     } catch (error) {
       console.error("Error saving general info:", error);
@@ -342,7 +312,6 @@ export default function WebSettingsPage() {
     let finalImageUrl = currentManualUrl || "";
     const finalImageHint = hintKey ? (generalInfoForm.getValues(hintKey) || "") : undefined;
 
-
     try {
       if (fileToUpload) {
         finalImageUrl = await uploadLocalImage(fileToUpload, 'web-settings', originalDbUrl);
@@ -354,23 +323,26 @@ export default function WebSettingsPage() {
         }
       }
       
-      const settingsDocRef = doc(db, WEB_SETTINGS_COLLECTION, WEB_SETTINGS_DOC_ID);
-      const updateData: Partial<GlobalWebSettings> = { updatedAt: Timestamp.now(), [currentDbUrlKey]: finalImageUrl };
+      const updateData: Partial<GlobalWebSettings> = { updatedAt: new Date().toISOString(), [currentDbUrlKey]: finalImageUrl };
       if (hintKey !== null && finalImageHint !== undefined) {
         (updateData as any)[hintKey] = finalImageHint;
       }
-
-      await setDoc(settingsDocRef, updateData, { merge: true });
+      const merged = { ...globalSettings, ...updateData };
+      await fetch('/api/db/web-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(merged)
+      });
       await triggerRefresh('web-settings');
       await triggerRefresh('global-cache');
       await triggerRefresh('sitemap');
       
-      setGlobalSettings(prev => ({ ...prev, ...updateData }));
-      setOriginalGlobalSettings(prev => ({ ...prev, ...updateData }));
+      setGlobalSettings(merged);
+      setOriginalGlobalSettings(merged);
       setPreviewState(finalImageUrl || null);
       setFileState(null);
 
-      toast({ title: "Success", description: `${assetType.charAt(0).toUpperCase() + assetType.slice(1)} saved.` });
+      toast({ title: "Success", description: `${assetType.charAt(0).toUpperCase() + assetType.slice(1)} saved to MySQL.` });
     } catch (error: any) {
       console.error(`Error saving ${assetType}:`, error);
       toast({ title: "Error", description: `Could not save ${assetType}. ${error.message}`, variant: "destructive" });
@@ -452,7 +424,6 @@ export default function WebSettingsPage() {
         finalImageUrl = "";
       }
 
-      const pageDocRef = doc(db, CONTENT_PAGES_COLLECTION, selectedPageSlug);
       const pageData: ContentPage = {
         id: selectedPageSlug,
         slug: selectedPageSlug,
@@ -460,14 +431,19 @@ export default function WebSettingsPage() {
         content: data.content || "",
         imageUrl: finalImageUrl,
         imageHint: data.imageHint || "",
-        updatedAt: Timestamp.now(),
+        updatedAt: new Date().toISOString(),
       };
-      await setDoc(pageDocRef, pageData, { merge: true });
+      await fetch('/api/db/collections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ collectionName: 'contentPages', id: selectedPageSlug, data: pageData })
+      });
       await triggerRefresh('web-settings');
       await triggerRefresh('global-cache');
       await triggerRefresh('sitemap');
-      toast({ title: "Success", description: `${pageData.title} content saved.` });
+      toast({ title: "Success", description: `${pageData.title} content saved to MySQL.` });
       setPageImageFile(null);
+      loadContentPages();
     } catch (error) {
       console.error("Error saving content page:", error);
       toast({ title: "Error", description: "Could not save content page.", variant: "destructive" });
@@ -479,7 +455,6 @@ export default function WebSettingsPage() {
   const handleSaveSocialMediaLinks = async (data: SocialMediaLinksFormData) => {
     setIsSaving(true);
     try {
-        const settingsDocRef = doc(db, WEB_SETTINGS_COLLECTION, WEB_SETTINGS_DOC_ID);
         const updateData: Partial<GlobalWebSettings> = {
             socialMediaLinks: {
                 facebook: data.facebook || "",
@@ -488,15 +463,20 @@ export default function WebSettingsPage() {
                 linkedin: data.linkedin || "",
                 youtube: data.youtube || "",
             },
-            updatedAt: Timestamp.now(),
+            updatedAt: new Date().toISOString(),
         };
-        await setDoc(settingsDocRef, updateData, { merge: true });
+        const merged = { ...globalSettings, ...updateData };
+        await fetch('/api/db/web-settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(merged)
+        });
         await triggerRefresh('web-settings');
         await triggerRefresh('global-cache');
         await triggerRefresh('sitemap');
-        setGlobalSettings(prev => ({ ...prev, ...updateData }));
-        setOriginalGlobalSettings(prev => ({...prev, ...updateData}));
-        toast({ title: "Success", description: "Social media links saved." });
+        setGlobalSettings(merged);
+        setOriginalGlobalSettings(merged);
+        toast({ title: "Success", description: "Social media links saved to MySQL." });
     } catch (error) {
         console.error("Error saving social media links:", error);
         toast({ title: "Error", description: "Could not save social media links.", variant: "destructive" });

@@ -10,8 +10,6 @@ import { Switch } from "@/components/ui/switch";
 import { PlusCircle, Edit, Trash2, Loader2, Megaphone, CheckCircle, XCircle, Eye } from "lucide-react";
 import type { FirestorePopup } from '@/types/firestore';
 import PopupForm from '@/components/admin/PopupForm';
-import { db, storage } from '@/lib/firebase';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, getDoc, orderBy, query, Timestamp } from "firebase/firestore";
 import { deleteLocalImage } from '@/lib/fileUploadUtils';
 import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -27,18 +25,16 @@ export default function AdminNewsletterPopupsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
 
-  const popupsCollectionRef = collection(db, "adminPopups");
-
   const fetchPopups = async () => {
     setIsLoading(true);
     try {
-      const q = query(popupsCollectionRef, orderBy("createdAt", "desc"));
-      const data = await getDocs(q);
-      const fetchedPopups = data.docs.map((doc) => ({ ...doc.data(), id: doc.id } as FirestorePopup));
-      setPopups(fetchedPopups);
+      const res = await fetch('/api/db/collections?name=adminPopups');
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        setPopups(json.data as FirestorePopup[]);
+      }
     } catch (error) {
-      console.error("Error fetching popups: ", error);
-      toast({ title: "Error", description: "Could not fetch popups.", variant: "destructive" });
+      console.error("Error fetching popups from MySQL: ", error);
     } finally {
       setIsLoading(false);
     }
@@ -46,7 +42,6 @@ export default function AdminNewsletterPopupsPage() {
 
   useEffect(() => {
     fetchPopups();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleAddPopup = () => {
@@ -62,16 +57,13 @@ export default function AdminNewsletterPopupsPage() {
   const handleDeletePopup = async (popupId: string) => {
     setIsSubmitting(true);
     try {
-      const popupDoc = await getDoc(doc(db, "adminPopups", popupId));
-      const popupData = popupDoc.data() as FirestorePopup | undefined;
-
-      if (popupData?.imageUrl) {
-        await deleteLocalImage(popupData.imageUrl);
+      const target = popups.find(p => p.id === popupId);
+      if (target?.imageUrl) {
+        await deleteLocalImage(target.imageUrl);
       }
-      
-      await deleteDoc(doc(db, "adminPopups", popupId));
+      await fetch(`/api/db/collections?name=adminPopups&id=${popupId}`, { method: 'DELETE' });
       setPopups(popups.filter(p => p.id !== popupId));
-      toast({ title: "Success", description: "Popup deleted successfully." });
+      toast({ title: "Success", description: "Popup deleted from MySQL successfully." });
     } catch (error: any) {
       console.error("Error deleting popup: ", error);
       toast({ title: "Error", description: "Could not delete popup. " + (error.message || ""), variant: "destructive" });
@@ -83,58 +75,47 @@ export default function AdminNewsletterPopupsPage() {
   const handleToggleActive = async (popup: FirestorePopup) => {
     setIsSubmitting(true);
     try {
-      const popupDocRef = doc(db, "adminPopups", popup.id);
-      await updateDoc(popupDocRef, { isActive: !popup.isActive, updatedAt: Timestamp.now() });
+      const updated = { ...popup, isActive: !popup.isActive, updatedAt: new Date().toISOString() };
+      await fetch('/api/db/collections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ collectionName: 'adminPopups', id: popup.id, data: updated })
+      });
       await fetchPopups();
       toast({ title: "Status Updated", description: `Popup "${popup.name}" ${!popup.isActive ? "activated" : "deactivated"}.`});
     } catch (error: any) {
-        console.error("Error toggling popup status:", error);
-        toast({ title: "Error", description: "Could not update popup status.", variant: "destructive" });
+      console.error("Error toggling popup status:", error);
+      toast({ title: "Error", description: "Could not update popup status.", variant: "destructive" });
     } finally {
-        setIsSubmitting(false);
+      setIsSubmitting(false);
     }
   };
 
   const handleFormSubmit = async (data: Omit<FirestorePopup, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => {
     setIsSubmitting(true);
+    const docId = data.id || `pop_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     
-    const payload: Omit<FirestorePopup, 'id' | 'createdAt' | 'updatedAt'> & { id?: string } = { 
-      name: data.name,
-      popupType: data.popupType,
-      title: data.title || "",
-      displayText: data.displayText || "",
-      imageUrl: data.imageUrl || "",
-      imageHint: data.imageHint || "",
-      videoUrl: data.videoUrl || "",
-      showEmailInput: data.showEmailInput,
-      showNameInput: data.showNameInput,
-      showMobileInput: data.showMobileInput,
-      promoCode: data.promoCode || "",
-      promoCodeConditionFieldsRequired: data.promoCodeConditionFieldsRequired ?? 0,
-      targetUrl: data.targetUrl || "",
-      displayRuleType: data.displayRuleType,
-      displayRuleValue: data.displayRuleValue === undefined || data.displayRuleValue === null ? null : data.displayRuleValue,
-      displayFrequency: data.displayFrequency,
-      showCloseButton: data.showCloseButton,
-      isActive: data.isActive,
-      targetPages: data.targetPages || [],
+    const fullData = {
+      ...data,
+      id: docId,
+      updatedAt: new Date().toISOString(),
+      ...(data.id ? {} : { createdAt: new Date().toISOString() })
     };
 
     try {
-      if (data.id) { 
-        const popupDoc = doc(db, "adminPopups", data.id);
-        await updateDoc(popupDoc, { ...payload, updatedAt: Timestamp.now() });
-        toast({ title: "Success", description: "Popup updated successfully." });
-      } else { 
-        await addDoc(popupsCollectionRef, { ...payload, createdAt: Timestamp.now() });
-        toast({ title: "Success", description: "Popup added successfully." });
-      }
+      await fetch('/api/db/collections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ collectionName: 'adminPopups', id: docId, data: fullData })
+      });
+
+      toast({ title: "Success", description: data.id ? "Popup updated in MySQL." : "Popup created in MySQL." });
       setIsFormOpen(false);
       setEditingPopup(null);
-      await fetchPopups(); 
+      fetchPopups();
     } catch (error: any) {
       console.error("Error saving popup: ", error);
-      toast({ title: "Error", description: (error as Error).message || "Could not save popup.", variant: "destructive" });
+      toast({ title: "Error", description: (error.message || "Could not save popup."), variant: "destructive" });
     } finally {
       setIsSubmitting(false);
     }

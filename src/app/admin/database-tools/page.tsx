@@ -8,11 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Database, UploadCloud, Download, Loader2, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { db } from '@/lib/firebase';
-import { collection, getDocs, doc, writeBatch, query, collectionGroup } from "firebase/firestore";
 
 // Define the list of collections to be exported.
-// This list should be updated if new collections are added to the app.
 const COLLECTIONS_TO_EXPORT = [
   "webSettings",
   "adminCategories",
@@ -37,8 +34,6 @@ const COLLECTIONS_TO_EXPORT = [
   "users",
   "userActivities",
   "userNotifications",
-  // Note: 'chats' is a collection with subcollections. Exporting its root might miss the 'messages'.
-  // A more complex export would be needed for subcollections. For simplicity, we skip subcollections here.
 ];
 
 
@@ -50,17 +45,18 @@ export default function DatabaseToolsPage() {
 
   const handleExport = async () => {
     setIsExporting(true);
-    toast({ title: "Starting Export", description: "Fetching data from all collections. This may take a moment..." });
+    toast({ title: "Starting Export", description: "Fetching data from MySQL collections. This may take a moment..." });
 
     const exportData: Record<string, any[]> = {};
     try {
       for (const collectionName of COLLECTIONS_TO_EXPORT) {
-        const collectionRef = collection(db, collectionName);
-        const snapshot = await getDocs(query(collectionRef));
-        exportData[collectionName] = snapshot.docs.map(doc => ({
-          _id: doc.id, // Use _id to avoid conflict with potential 'id' field in data
-          ...doc.data()
-        }));
+        const res = await fetch(`/api/db/collections?name=${collectionName}`);
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data)) {
+          exportData[collectionName] = json.data;
+        } else {
+          exportData[collectionName] = [];
+        }
       }
 
       const jsonString = JSON.stringify(exportData, null, 2);
@@ -69,7 +65,7 @@ export default function DatabaseToolsPage() {
       const link = document.createElement('a');
       link.href = url;
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      link.download = `firestore-export-${timestamp}.json`;
+      link.download = `mysql-export-${timestamp}.json`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -106,41 +102,31 @@ export default function DatabaseToolsPage() {
         const importData = JSON.parse(fileContent);
 
         let totalOperations = 0;
-        let batch = writeBatch(db);
         
         for (const collectionName in importData) {
           if (Object.prototype.hasOwnProperty.call(importData, collectionName)) {
             const documents = importData[collectionName];
             if (Array.isArray(documents)) {
               for (const docData of documents) {
-                const { _id, ...data } = docData;
-                const docRef = doc(db, collectionName, _id);
-                batch.set(docRef, data);
+                const docId = docData.id || docData._id || `doc_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+                await fetch('/api/db/collections', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ collectionName, id: docId, data: docData })
+                });
                 totalOperations++;
-
-                // Firestore allows a maximum of 500 operations in a single batch.
-                if (totalOperations % 499 === 0) {
-                  await batch.commit();
-                  batch = writeBatch(db); // Start a new batch
-                }
               }
             }
           }
         }
-        
-        // Commit the final batch if it has any operations
-        if (totalOperations % 499 !== 0 || totalOperations === 0) {
-           await batch.commit();
-        }
 
-        toast({ title: "Import Successful", description: `Successfully imported ${totalOperations} documents.` });
+        toast({ title: "Import Successful", description: `Successfully imported ${totalOperations} documents to MySQL.` });
       } catch (error) {
         console.error("Error importing database:", error);
-        toast({ title: "Import Failed", description: (error as Error).message || "Invalid JSON file or Firestore error.", variant: "destructive" });
+        toast({ title: "Import Failed", description: (error as Error).message || "Invalid JSON file.", variant: "destructive" });
       } finally {
         setIsImporting(false);
         setImportFile(null);
-        // Reset file input
         const fileInput = document.getElementById('import-file-input') as HTMLInputElement;
         if (fileInput) fileInput.value = '';
       }

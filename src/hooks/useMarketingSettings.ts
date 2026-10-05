@@ -1,8 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { doc, getDoc, onSnapshot } from "firebase/firestore";
-import { db } from '@/lib/firebase';
 import type { MarketingSettings, FirebaseClientConfig } from '@/types/firestore';
 import { getCache, setCache } from '@/lib/client-cache';
 import { usePathname } from 'next/navigation';
@@ -77,30 +75,26 @@ export function useMarketingSettings(): UseMarketingSettingsReturn {
   }, []);
 
   useEffect(() => {
-    // If it's a bot, skip fetching to save reads
     if (isBot()) {
       setIsLoading(false);
       return;
     }
 
-    const settingsDocRef = doc(db, MARKETING_CONFIG_COLLECTION, MARKETING_CONFIG_DOC_ID);
-
-    // Use onSnapshot for real-time updates
-    const unsubscribe = onSnapshot(settingsDocRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const processed = processData(docSnap.data());
-        setSettings(processed);
-        setCache(CACHE_KEY, processed, true);
-      }
-      setIsLoading(false);
-      hasLoadedRef.current = true;
-    }, (err) => {
-      console.error("Error fetching marketing settings:", err);
-      setError("Failed to load settings.");
-      setIsLoading(false);
-    });
-
-    return () => unsubscribe();
+    fetch('/api/db/settings?key=marketingConfiguration')
+      .then(r => r.json())
+      .then(json => {
+        if (json.success && json.data) {
+          const processed = processData(json.data);
+          setSettings(processed);
+          setCache(CACHE_KEY, processed, true);
+        }
+        setIsLoading(false);
+        hasLoadedRef.current = true;
+      })
+      .catch((err) => {
+        console.error("Error fetching marketing settings from MySQL:", err);
+        setIsLoading(false);
+      });
   }, [processData]);
 
   return { settings, isLoading, error };

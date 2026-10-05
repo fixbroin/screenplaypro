@@ -1,12 +1,9 @@
-
 "use client";
 
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Star, ShieldCheck } from 'lucide-react';
-import { db } from '@/lib/firebase';
-import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
 import type { FirestoreReview } from '@/types/firestore';
 import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious } from "@/components/ui/carousel";
 import Autoplay from "embla-carousel-autoplay";
@@ -27,35 +24,27 @@ const Testimonials = () => {
     const fetchReviews = async () => {
       setIsLoading(true);
       try {
-        const reviewsRef = collection(db, "adminReviews");
-        // Use 'in' operator for rating to allow primary sorting by createdAt (recency)
-        const q = query(
-          reviewsRef,
-          where("status", "==", "Approved"),
-          where("rating", "in", [4, 5]),
-          orderBy("createdAt", "desc"),
-          limit(40) // Fetch a larger pool to filter for unique users
-        );
-        const snapshot = await getDocs(q);
-        const fetchedReviews = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as FirestoreReview));
-        
-        // Filter for unique reviewers by name to prevent same person appearing twice
-        const uniqueReviews: FirestoreReview[] = [];
-        const seenNames = new Set<string>();
-        
-        for (const review of fetchedReviews) {
-          const nameKey = review.userName.trim().toLowerCase();
-          if (!seenNames.has(nameKey)) {
-            uniqueReviews.push(review);
-            seenNames.add(nameKey);
+        const res = await fetch('/api/db/collections?name=adminReviews');
+        const data = await res.json();
+        if (data.success && Array.isArray(data.data)) {
+          const approvedReviews: FirestoreReview[] = data.data.filter((r: any) => r.status === 'Approved' && Number(r.rating) >= 4);
+          
+          const uniqueReviews: FirestoreReview[] = [];
+          const seenNames = new Set<string>();
+          
+          for (const review of approvedReviews) {
+            const nameKey = (review.userName || 'User').trim().toLowerCase();
+            if (!seenNames.has(nameKey)) {
+              uniqueReviews.push(review);
+              seenNames.add(nameKey);
+            }
+            if (uniqueReviews.length >= 12) break;
           }
-          if (uniqueReviews.length >= 12) break; // Keep top 12 unique recent reviews
+
+          setTestimonials(uniqueReviews);
         }
-
-        setTestimonials(uniqueReviews);
-
       } catch (error) {
-        console.error("Error fetching testimonials:", error);
+        console.error("Error fetching testimonials from MySQL:", error);
       } finally {
         setIsLoading(false);
       }
@@ -89,7 +78,7 @@ const Testimonials = () => {
   }
 
   if (testimonials.length === 0) {
-    return null; // Don't render the section if there are no testimonials
+    return null;
   }
 
   return (

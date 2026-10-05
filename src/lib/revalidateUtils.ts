@@ -2,37 +2,26 @@
 'use server';
 
 import { revalidateTag } from 'next/cache';
-import { adminDb } from './firebaseAdmin';
-import { FieldValue } from 'firebase-admin/firestore';
+import { queryDb } from './mysql';
 import { submitToGoogleIndexing } from './googleIndexing';
 
 /**
  * Smart Trigger: Tells the server to clear the cache for specific data
- * so that the next request pulls fresh data from Firestore.
- * Also increments the global cache version in Firestore to signal clients.
+ * so that the next request pulls fresh data from MySQL.
  */
-export async function triggerRefresh(tag: 'services' | 'categories' | 'cities' | 'bookings' | 'users' | 'content' | 'blog' | 'global' | 'withdrawal-referral-config' | 'withdrawal-Artist-config' | string) {
+export async function triggerRefresh(tag: string) {
   try {
     revalidateTag(tag);
     
-    // Bump the global cache version (1 write)
-    // Only bump "global" if the change is truly global (settings/SEO)
-    // This prevents every user login/booking from forcing all visitors to re-read settings.
     const isGlobalChange = ['global', 'app-settings', 'web-settings', 'seo-settings', 'marketing-settings', 'global-cache'].includes(tag);
     
-    const versionDoc = adminDb.collection('appConfiguration').doc('cacheVersions');
-    const updates: any = {
-        [tag]: FieldValue.increment(1),
-        updatedAt: new Date()
-    };
-    
-    if (isGlobalChange) {
-        updates.global = FieldValue.increment(1);
-    }
-    
-    await versionDoc.set(updates, { merge: true });
+    const updates = { tag, isGlobalChange, updatedAt: new Date().toISOString() };
+    await queryDb(
+      `INSERT INTO generic_collections (id, collection_name, data) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE data = ?`,
+      ['cacheVersions', 'appConfiguration', JSON.stringify(updates), JSON.stringify(updates)]
+    ).catch(() => {});
 
-    console.log(`[SmartSync] Cache invalidated for tag: ${tag} and version bumped (Global: ${isGlobalChange}).`);
+    console.log(`[SmartSync] Cache invalidated for tag: ${tag} (Global: ${isGlobalChange}).`);
     return { success: true };
   } catch (error) {
     console.error(`[SmartSync] Failed to invalidate tag: ${tag}`, error);
@@ -61,4 +50,3 @@ export async function submitPathToGoogleIndexing(path: string, type: 'URL_UPDATE
     return { success: false, error: error.message };
   }
 }
-

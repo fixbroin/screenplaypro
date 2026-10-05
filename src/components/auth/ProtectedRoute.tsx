@@ -8,9 +8,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { ADMIN_EMAIL } from '@/contexts/AuthContext';
 import { Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase'; // Import db
-import { doc, getDoc } from 'firebase/firestore'; // Import Firestore functions
-import type { ArtistApplication } from '@/types/firestore'; // Import ArtistApplication type
+import type { ArtistApplication } from '@/types/firestore';
 
 const Artist_APPLICATION_COLLECTION = "ArtistApplications";
 
@@ -40,9 +38,9 @@ const ProtectedRoute: React.FC<PropsWithChildren> = ({ children }) => {
     const checkArtistApproval = async (userId: string) => {
       setIsCheckingArtistStatus(true);
       try {
-        const appDocRef = doc(db, Artist_APPLICATION_COLLECTION, userId);
-        const docSnap = await getDoc(appDocRef);
-        if (docSnap.exists() && docSnap.data()?.status === 'approved') {
+        const res = await fetch(`/api/db/collections?name=${Artist_APPLICATION_COLLECTION}&id=${userId}`);
+        const data = await res.json();
+        if (data.success && data.data && data.data.status === 'approved') {
           setIsArtistApproved(true);
         } else {
           setIsArtistApproved(false);

@@ -65,15 +65,13 @@ export default function AdminChatMessageArea({ selectedUser }: AdminChatMessageA
     const fetchSupportAdminProfile = async () => {
       setIsLoadingSupportAdminProfile(true);
       try {
-        const adminQuery = query(collection(db, "users"), where("email", "==", ADMIN_EMAIL), limit(1));
-        const adminSnapshot = await getDocs(adminQuery);
-        if (!adminSnapshot.empty) {
-          const adminData = adminSnapshot.docs[0].data();
-          const adminUid = adminSnapshot.docs[0].id;
+        const adminRes = await fetch(`/api/db/users?email=${encodeURIComponent(ADMIN_EMAIL)}`);
+        const adminJson = await adminRes.json();
+        if (adminJson.success && adminJson.user) {
           setSupportAdminProfile({
-            displayName: adminData.displayName || "Support",
-            photoURL: adminData.photoURL || null,
-            uid: adminUid
+            displayName: adminJson.user.displayName || "Support",
+            photoURL: adminJson.user.photoURL || null,
+            uid: adminJson.user.id
           });
         } else {
           setSupportAdminProfile({ displayName: "Support", photoURL: null, uid: 'fallback_admin_uid' });

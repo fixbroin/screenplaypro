@@ -10,8 +10,6 @@ import { Switch } from "@/components/ui/switch";
 import { PlusCircle, Edit, Trash2, Loader2, FileText, CheckCircle, XCircle, PackageSearch } from "lucide-react";
 import type { FirestoreBlogPost, FirestoreCategory } from '@/types/firestore';
 import BlogForm from '@/components/admin/BlogForm';
-import { db, storage } from '@/lib/firebase';
-import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, orderBy, query, Timestamp, getDocs } from "firebase/firestore";
 import { deleteLocalImage } from '@/lib/fileUploadUtils';
 import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -30,36 +28,36 @@ export default function AdminBlogPage() {
   const { toast } = useToast();
   const { user } = useAuth();
 
-  const postsCollectionRef = collection(db, "blogPosts");
-  const categoriesCollectionRef = collection(db, "adminCategories");
+  const loadPosts = async () => {
+    setIsLoading(true);
+    try {
+      const res = await fetch('/api/db/collections?name=blogPosts');
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        setPosts(json.data as FirestoreBlogPost[]);
+      }
+    } catch (error) {
+      console.error("Error fetching blog posts from MySQL:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
-    setIsLoading(true);
-    
     const fetchCategories = async () => {
-        try {
-            const catQuery = query(categoriesCollectionRef, orderBy("name"));
-            const snapshot = await getDocs(catQuery);
-            setCategories(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as FirestoreCategory)));
-        } catch (error) {
-            console.error("Error fetching categories:", error);
-            toast({ title: "Error", description: "Could not fetch categories.", variant: "destructive" });
+      try {
+        const res = await fetch('/api/db/collections?name=adminCategories');
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data)) {
+          setCategories(json.data as FirestoreCategory[]);
         }
+      } catch (error) {
+        console.error("Error fetching categories:", error);
+      }
     };
     
-    const qPosts = query(postsCollectionRef, orderBy("createdAt", "desc"));
-    const unsubscribePosts = onSnapshot(qPosts, (snapshot) => {
-      setPosts(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as FirestoreBlogPost)));
-      if (isLoading) setIsLoading(false);
-    }, (error) => {
-      console.error("Error fetching blog posts: ", error);
-      toast({ title: "Error", description: "Could not fetch blog posts.", variant: "destructive" });
-      setIsLoading(false);
-    });
-
     fetchCategories();
-
-    return () => unsubscribePosts();
+    loadPosts();
   }, [toast]);
 
   const handleAddPost = () => {
@@ -78,8 +76,8 @@ export default function AdminBlogPage() {
       if (post.coverImageUrl) {
         await deleteLocalImage(post.coverImageUrl);
       }
-      await deleteDoc(doc(db, "blogPosts", post.id));
-      toast({ title: "Success", description: "Blog post deleted successfully." });
+      await fetch(`/api/db/collections?name=blogPosts&id=${post.id}`, { method: 'DELETE' });
+      toast({ title: "Success", description: "Blog post deleted from MySQL successfully." });
       await triggerRefresh('blog');
       await triggerRefresh('sitemap');
       if (post.slug && post.isPublished) {
@@ -87,7 +85,7 @@ export default function AdminBlogPage() {
           console.error("Google Indexing error on blog delete:", err);
         });
       }
-      // Removed global-cache trigger to save reads
+      loadPosts();
     } catch (error) {
       console.error("Error deleting post: ", error);
       toast({ title: "Error", description: (error as Error).message || "Could not delete post.", variant: "destructive" });
@@ -99,7 +97,12 @@ export default function AdminBlogPage() {
   const handleTogglePublished = async (post: FirestoreBlogPost) => {
     setIsSubmitting(true);
     try {
-      await updateDoc(doc(db, "blogPosts", post.id), { isPublished: !post.isPublished, updatedAt: Timestamp.now() });
+      const updatedPost = { ...post, isPublished: !post.isPublished, updatedAt: new Date().toISOString() };
+      await fetch('/api/db/collections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ collectionName: 'blogPosts', id: post.id, data: updatedPost })
+      });
       toast({ title: "Status Updated", description: `Post "${post.title}" ${!post.isPublished ? "published" : "unpublished"}.`});
       await triggerRefresh('blog');
       await triggerRefresh('sitemap');
@@ -108,7 +111,7 @@ export default function AdminBlogPage() {
           console.error("Google Indexing error on blog toggle publish:", err);
         });
       }
-      // Removed global-cache trigger to save reads
+      loadPosts();
     } catch (error) {
       toast({ title: "Error", description: "Could not update post status.", variant: "destructive" });
     } finally {
@@ -119,42 +122,33 @@ export default function AdminBlogPage() {
   const handleFormSubmit = async (data: Omit<FirestoreBlogPost, 'id' | 'createdAt' | 'updatedAt' | 'authorId' | 'authorName'> & { id?: string }) => {
     setIsSubmitting(true);
     const { id, ...payload } = data;
+    const docId = id || `blog_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
     try {
-      if (id) {
-        await updateDoc(doc(db, "blogPosts", id), { 
-            ...payload, 
-            authorId: user?.uid, 
-            authorName: user?.displayName, 
-            updatedAt: Timestamp.now() 
-        });
-        toast({ title: "Success", description: "Blog post updated." });
-      } else {
-        await addDoc(postsCollectionRef, { 
-            ...payload, 
-            authorId: user?.uid, 
-            authorName: user?.displayName, 
-            createdAt: Timestamp.now() 
-        });
-        toast({ title: "Success", description: "New blog post created." });
-      }
+      const postData = {
+        ...payload,
+        id: docId,
+        authorId: user?.uid,
+        authorName: user?.displayName,
+        updatedAt: new Date().toISOString(),
+        ...(id ? {} : { createdAt: new Date().toISOString() })
+      };
+
+      await fetch('/api/db/collections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ collectionName: 'blogPosts', id: docId, data: postData })
+      });
+
+      toast({ title: "Success", description: id ? "Blog post updated in MySQL." : "New blog post created in MySQL." });
       await triggerRefresh('blog');
       if (payload.slug) {
         await triggerRefresh(`blog-${payload.slug}`);
       }
       await triggerRefresh('sitemap');
-      if (payload.slug && payload.isPublished) {
-        submitPathToGoogleIndexing(`/blog/${payload.slug}`, 'URL_UPDATED').catch(err => {
-          console.error("Google Indexing error on blog save:", err);
-        });
-      } else if (payload.slug && !payload.isPublished) {
-        submitPathToGoogleIndexing(`/blog/${payload.slug}`, 'URL_DELETED').catch(err => {
-          console.error("Google Indexing error on blog save (draft):", err);
-        });
-      }
-      // Removed global-cache trigger to save reads
       setIsFormOpen(false);
       setEditingPost(null);
+      loadPosts();
     } catch (error) {
       console.error("Error saving post:", error);
       toast({ title: "Error", description: (error as Error).message || "Could not save post.", variant: "destructive" });

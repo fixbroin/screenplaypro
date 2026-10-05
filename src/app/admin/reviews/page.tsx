@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useMemo } from 'react';
@@ -8,11 +7,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PlusCircle, Edit, Trash2, Loader2, Star, MessageSquare, Filter, Wand2 } from "lucide-react"; 
-import type { FirestoreReview, ReviewStatus, FirestoreCategory } from '@/types/firestore';
+import type { FirestoreReview, ReviewStatus } from '@/types/firestore';
 import ReviewForm, { type ReviewFormData } from '@/components/admin/ReviewForm';
 import BulkReviewGeneratorDialog from '@/components/admin/BulkReviewGeneratorDialog';
-import { db } from '@/lib/firebase';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, orderBy, query, Timestamp, onSnapshot, limit, startAfter, where, type DocumentSnapshot } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { getTimestampMillis } from '@/lib/utils';
@@ -29,12 +26,6 @@ const formatReviewTimestamp = (timestamp?: unknown): string => {
 
 export default function AdminReviewsPage() {
   const [reviews, setReviews] = useState<FirestoreReview[]>([]);
-  const [lastDoc, setLastDoc] = useState<DocumentSnapshot | null>(null);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
-  
-  const [artists, setArtists] = useState<{ id: string; name: string; categoryId: string }[]>([]);
-  const [categories, setCategories] = useState<Pick<FirestoreCategory, 'id' | 'name'>[]>([]);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isBulkGenerateOpen, setIsBulkGenerateOpen] = useState(false);
   const [editingReview, setEditingReview] = useState<FirestoreReview | null>(null);
@@ -43,107 +34,42 @@ export default function AdminReviewsPage() {
   const [filterStatus, setFilterStatus] = useState<ReviewStatus | "All">("All");
   const { toast } = useToast();
 
-  const [isPrerequisitesLoading, setIsPrerequisitesLoading] = useState(false);
-
-  const fetchPrerequisites = async () => {
-    if (artists.length > 0) return; // Already loaded
-    setIsPrerequisitesLoading(true);
+  const loadReviews = async () => {
+    setIsLoading(true);
     try {
-        const artistsQuery = query(collection(db, "users"), where("roles", "array-contains", "artist"), orderBy("displayName"));
-        const catsQuery = query(collection(db, "adminCategories"), orderBy("name"));
-        
-        const [artistsSnap, catsSnap] = await Promise.all([
-            getDocs(artistsQuery), getDocs(catsQuery)
-        ]);
-
-        const fetchedArtists = artistsSnap.docs.map(doc => {
-          const data = doc.data();
-          return { 
-            id: doc.id, 
-            name: data.displayName || "Unknown Artist", 
-            categoryId: data.workCategoryId || "" 
-          };
-        });
-        setArtists(fetchedArtists);
-        setCategories(catsSnap.docs.map(doc => ({ id: doc.id, name: doc.data().name as string })));
+      const res = await fetch('/api/db/collections?name=adminReviews');
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        setReviews(json.data as FirestoreReview[]);
+      }
     } catch (error) {
-        console.error("Error fetching prerequisites:", error);
-        toast({ title: "Error", description: "Could not load artist or category data.", variant: "destructive" });
+      console.error("Error fetching reviews from MySQL: ", error);
     } finally {
-        setIsPrerequisitesLoading(false);
+      setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    const reviewsCollectionRef = collection(db, "adminReviews");
-    const qReviews = query(reviewsCollectionRef, orderBy("createdAt", "desc"), limit(20));
-    
-    const unsubscribe = onSnapshot(qReviews, (querySnapshot) => {
-        const fetchedReviews = querySnapshot.docs.map((doc) => ({ ...doc.data(), id: doc.id } as FirestoreReview));
-        setReviews(fetchedReviews);
-        setLastDoc(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
-        setHasMore(querySnapshot.docs.length === 20);
-        setIsLoading(false);
-    }, (error) => {
-        console.error("Error fetching reviews: ", error);
-        toast({ title: "Error", description: "Could not fetch reviews.", variant: "destructive" });
-        setIsLoading(false);
-    });
+    loadReviews();
+  }, []);
 
-    return () => unsubscribe();
-  }, [toast]);
-
-  const handleAddReview = async () => {
-    await fetchPrerequisites();
+  const handleAddReview = () => {
     setEditingReview(null);
     setIsFormOpen(true);
   };
 
-  const handleEditReview = async (review: FirestoreReview) => {
-    await fetchPrerequisites();
+  const handleEditReview = (review: FirestoreReview) => {
     setEditingReview(review);
     setIsFormOpen(true);
   };
 
-  const handleOpenBulkGenerate = async () => {
-    await fetchPrerequisites();
+  const handleOpenBulkGenerate = () => {
     setIsBulkGenerateOpen(true);
-  };
-
-  const loadMoreReviews = async () => {
-    if (!lastDoc || isLoadingMore) return;
-    setIsLoadingMore(true);
-    try {
-        const q = query(
-            collection(db, "adminReviews"), 
-            orderBy("createdAt", "desc"), 
-            startAfter(lastDoc), 
-            limit(20)
-        );
-        const snapshot = await getDocs(q);
-        const newReviews = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as FirestoreReview));
-        
-        setReviews(prev => {
-            // Filter out any duplicates that might have been added by the listener
-            const existingIds = new Set(prev.map(r => r.id));
-            const uniqueNew = newReviews.filter(r => !existingIds.has(r.id));
-            return [...prev, ...uniqueNew];
-        });
-        
-        setLastDoc(snapshot.docs[snapshot.docs.length - 1] || null);
-        setHasMore(snapshot.docs.length === 20);
-    } catch (error) {
-        console.error("Error loading more reviews:", error);
-        toast({ title: "Error", description: "Could not load more reviews.", variant: "destructive" });
-    } finally {
-        setIsLoadingMore(false);
-    }
   };
 
   const filteredReviews = useMemo(() => {
     const base = filterStatus === "All" ? reviews : reviews.filter(review => review.status === filterStatus);
     
-    // Explicitly sort by createdAt descending to ensure most recent is always first
     return [...base].sort((a, b) => {
       const aTime = getTimestampMillis(a.createdAt);
       const bTime = getTimestampMillis(b.createdAt);
@@ -154,7 +80,8 @@ export default function AdminReviewsPage() {
   const handleDeleteReview = async (reviewId: string) => {
     setIsSubmitting(true);
     try {
-      await deleteDoc(doc(db, "adminReviews", reviewId));
+      await fetch(`/api/db/collections?name=adminReviews&id=${reviewId}`, { method: 'DELETE' });
+      setReviews(reviews.filter(r => r.id !== reviewId));
       toast({ title: "Success", description: "Review deleted successfully." });
     } catch (error) {
       console.error("Error deleting review: ", error);
@@ -164,31 +91,35 @@ export default function AdminReviewsPage() {
     }
   };
 
-  const handleFormSubmit = async (data: ReviewFormData & { serviceName: string, adminCreated: boolean, id?: string }) => {
+  const handleFormSubmit = async (data: ReviewFormData & { serviceName?: string, serviceId?: string, adminCreated: boolean, id?: string }) => {
     setIsSubmitting(true);
     
-    const payload: Omit<FirestoreReview, 'id' | 'createdAt' | 'updatedAt'> & { updatedAt?: Timestamp, createdAt?: Timestamp } = {
-      serviceId: data.serviceId, // Artist ID
-      serviceName: data.serviceName, // Artist Name
+    const docId = data.id || `rev_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const fullReviewData = {
+      id: docId,
+      serviceId: data.serviceId || "screenplay_pro",
+      serviceName: data.serviceName || "Screenplay Pro",
       userName: data.userName,
       rating: data.rating,
       comment: data.comment,
       status: data.status as ReviewStatus,
       adminCreated: data.adminCreated,
+      updatedAt: new Date().toISOString(),
+      ...(data.id ? {} : { createdAt: new Date().toISOString() })
     };
 
     try {
-      if (data.id) { 
-        const reviewDoc = doc(db, "adminReviews", data.id);
-        await updateDoc(reviewDoc, { ...payload, updatedAt: Timestamp.now() });
-        toast({ title: "Success", description: "Review updated successfully." });
-      } else { 
-        await addDoc(collection(db, "adminReviews"), { ...payload, createdAt: Timestamp.now() });
-        toast({ title: "Success", description: "Review added successfully." });
-      }
+      await fetch('/api/db/collections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ collectionName: 'adminReviews', id: docId, data: fullReviewData })
+      });
+
+      toast({ title: "Success", description: data.id ? "Review updated." : "Review added successfully." });
       await triggerRefresh('global-cache');
       setIsFormOpen(false);
       setEditingReview(null);
+      loadReviews();
     } catch (error) {
       console.error("Error saving review: ", error);
       toast({ title: "Error", description: (error as Error).message || "Could not save review.", variant: "destructive" });
@@ -199,11 +130,20 @@ export default function AdminReviewsPage() {
   
   const handleChangeStatus = async (reviewId: string, newStatus: ReviewStatus) => {
      try {
-        await updateDoc(doc(db, "adminReviews", reviewId), { status: newStatus, updatedAt: Timestamp.now()});
-        toast({title: "Status Updated", description: `Review status changed to ${newStatus}.`})
+        const existing = reviews.find(r => r.id === reviewId);
+        if (existing) {
+          const updated = { ...existing, status: newStatus, updatedAt: new Date().toISOString() };
+          await fetch('/api/db/collections', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ collectionName: 'adminReviews', id: reviewId, data: updated })
+          });
+        }
+        toast({ title: "Status Updated", description: `Review status changed to ${newStatus}.` });
+        loadReviews();
      } catch (error) {
         console.error("Error updating review status:", error);
-        toast({title: "Error", description: "Could not update review status.", variant: "destructive"});
+        toast({ title: "Error", description: "Could not update review status.", variant: "destructive" });
      }
   };
 
@@ -213,7 +153,7 @@ export default function AdminReviewsPage() {
         <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
             <CardTitle className="text-2xl flex items-center"><MessageSquare className="mr-2 h-6 w-6 text-primary" />Manage Reviews</CardTitle>
-            <CardDescription>Create, edit, delete, and manage the status of artist/talent reviews.</CardDescription>
+            <CardDescription>Create, edit, delete, and manage screenplay and script writing reviews.</CardDescription>
           </div>
           <div className="w-full sm:w-auto flex flex-col sm:flex-row gap-2">
             <div className="w-full sm:min-w-[180px]">
@@ -230,11 +170,11 @@ export default function AdminReviewsPage() {
                     </SelectContent>
                 </Select>
             </div>
-            <Button onClick={handleOpenBulkGenerate} variant="outline" className="w-full sm:w-auto h-9" disabled={isPrerequisitesLoading}>
-                {isPrerequisitesLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wand2 className="mr-2 h-4 w-4" />} AI Bulk Generate
+            <Button onClick={handleOpenBulkGenerate} variant="outline" className="w-full sm:w-auto h-9">
+                <Wand2 className="mr-2 h-4 w-4" /> AI Bulk Generate
             </Button>
-            <Button onClick={handleAddReview} disabled={isSubmitting || isLoading || isPrerequisitesLoading} className="w-full sm:w-auto h-9">
-                {isPrerequisitesLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlusCircle className="mr-2 h-4 w-4" />} Add New Review
+            <Button onClick={handleAddReview} disabled={isSubmitting || isLoading} className="w-full sm:w-auto h-9">
+                <PlusCircle className="mr-2 h-4 w-4" /> Add New Review
             </Button>
           </div>
         </CardHeader>
@@ -248,8 +188,8 @@ export default function AdminReviewsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Artist / Talent</TableHead>
-                  <TableHead>User</TableHead>
+                  <TableHead>Script / Subject</TableHead>
+                  <TableHead>User / Reviewer</TableHead>
                   <TableHead className="text-center">Rating</TableHead>
                   <TableHead>Comment</TableHead>
                   <TableHead>Created At</TableHead>
@@ -267,7 +207,7 @@ export default function AdminReviewsPage() {
                 ) : (
                   filteredReviews.map((review) => (
                     <TableRow key={review.id}>
-                      <TableCell className="font-medium text-xs max-w-[150px] truncate" title={review.serviceName}>{review.serviceName}</TableCell>
+                      <TableCell className="font-medium text-xs max-w-[150px] truncate" title={review.serviceName || "Screenplay Pro"}>{review.serviceName || "Screenplay Pro"}</TableCell>
                       <TableCell className="text-xs">{review.userName}</TableCell>
                       <TableCell className="text-center">
                         <div className="flex items-center justify-center">
@@ -305,7 +245,7 @@ export default function AdminReviewsPage() {
                               <AlertDialogHeader>
                                 <AlertDialogTitle>Are you sure?</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  This will permanently delete the review by &quot;{review.userName}&quot; for &quot;{review.serviceName}&quot;.
+                                  This will permanently delete the review by &quot;{review.userName}&quot;.
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
@@ -327,14 +267,6 @@ export default function AdminReviewsPage() {
               </TableBody>
             </Table>
           )}
-
-          {hasMore && reviews.length >= 20 && (
-            <div className="flex justify-center mt-6">
-                <Button variant="outline" size="sm" onClick={loadMoreReviews} disabled={isLoadingMore} className="min-w-[150px]">
-                    {isLoadingMore ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Load More Reviews"}
-                </Button>
-            </div>
-          )}
         </CardContent>
       </Card>
 
@@ -343,39 +275,25 @@ export default function AdminReviewsPage() {
            <DialogHeader className="p-2 pb-4 border-b bg-background z-10">
             <DialogTitle>{editingReview ? 'Edit Review' : 'Add New Review'}</DialogTitle>
             <DialogDescription>
-              {editingReview ? `Update details for review by ${editingReview.userName}.` : 'Fill in the details for a new review.'}
+              {editingReview ? `Update details for review by ${editingReview.userName}.` : 'Fill in the details for a new screenplay review.'}
             </DialogDescription>
           </DialogHeader>
           
           <div className="flex-grow overflow-y-auto">
-            {isPrerequisitesLoading ? (
-              <div className="p-2 py-8 text-center flex justify-center items-center">
-                  <Loader2 className="h-6 w-6 animate-spin text-primary"/>
-                  <span className="ml-2">Loading artists...</span>
-              </div>
-            ) : artists.length === 0 && !editingReview ? (
-              <div className="p-2 py-8 text-center">
-                  <p className="text-destructive">Cannot add new reviews because no artists exist.</p>
-                  <p className="text-muted-foreground text-sm mt-2">Please approve at least one artist first.</p>
-              </div>
-            ) : (
-              <ReviewForm
-                  onSubmit={handleFormSubmit}
-                  initialData={editingReview}
-                  services={artists}
-                  onCancel={() => { setIsFormOpen(false); setEditingReview(null); }}
-                  isSubmitting={isSubmitting}
-              />
-            )}
+            <ReviewForm
+                onSubmit={handleFormSubmit}
+                initialData={editingReview}
+                onCancel={() => { setIsFormOpen(false); setEditingReview(null); }}
+                isSubmitting={isSubmitting}
+            />
           </div>
         </DialogContent>
       </Dialog>
+
       <BulkReviewGeneratorDialog
         isOpen={isBulkGenerateOpen}
         onClose={() => setIsBulkGenerateOpen(false)}
-        onGenerationComplete={() => { /* onSnapshot handles refresh */ }}
-        artists={artists}
-        categories={categories}
+        onGenerationComplete={() => { loadReviews(); }}
       />
     </div>
   );
