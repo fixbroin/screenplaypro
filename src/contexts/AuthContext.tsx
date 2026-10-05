@@ -302,7 +302,7 @@ export const AuthProvider: React.FC<PropsWithChildren> = ({ children }) => {
           userEmail: details.email,
           smtpHost: appConfig.smtpHost, smtpPort: appConfig.smtpPort,
           smtpUser: appConfig.smtpUser, smtpPass: appConfig.smtpPass, senderEmail: appConfig.senderEmail,
-        }).catch(err => console.error("Failed to send welcome email:", err));
+        }).catch((err: any) => console.error("Failed to send welcome email:", err));
       }
 
       setUser(userToUpdate);
