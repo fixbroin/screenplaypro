@@ -68,12 +68,15 @@ declare global {
 }
 
 export default function SubscriptionPaymentPage() {
-  const { user, firestoreUser } = useAuth();
+  const { user } = useAuth();
   const searchParams = useSearchParams();
   const router = useRouter();
   const { toast } = useToast();
 
   const planId = searchParams.get('planId') || 'plan_monthly';
+  const planNameParam = searchParams.get('planName');
+  const amountParam = searchParams.get('amount');
+  const daysParam = searchParams.get('days');
   const returnUrl = searchParams.get('returnUrl') || '/script-writing';
 
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan | null>(null);
@@ -84,16 +87,40 @@ export default function SubscriptionPaymentPage() {
   useEffect(() => {
     async function loadPlan() {
       try {
-        if (DEFAULT_PLANS_MAP[planId]) {
-          setSelectedPlan(DEFAULT_PLANS_MAP[planId]);
+        let initialPlan: SubscriptionPlan | null = DEFAULT_PLANS_MAP[planId] || null;
+
+        if (amountParam && planNameParam) {
+          initialPlan = {
+            id: planId,
+            name: planNameParam,
+            price: Number(amountParam),
+            durationDays: daysParam ? Number(daysParam) : 30,
+            isActive: true,
+            order: 1,
+            features: [
+              'Unlimited PDF Script Exports',
+              'Studio-Standard Screenplay Formatting',
+              'Multi-Language Script Typing',
+              'Real-Time Cloud Autosave',
+              'Standard Export Quality'
+            ]
+          };
         }
-        
+
+        setSelectedPlan(initialPlan);
+
         const res = await fetch('/api/db/subscription-plans');
         if (res.ok) {
           const json = await res.json();
           if (json.success && Array.isArray(json.plans)) {
             const found = json.plans.find((p: any) => p.id === planId);
-            if (found) setSelectedPlan(found);
+            if (found) {
+              setSelectedPlan({
+                ...found,
+                price: amountParam ? Number(amountParam) : found.price,
+                name: planNameParam || found.name,
+              });
+            }
           }
         }
       } catch (e) {
@@ -103,24 +130,21 @@ export default function SubscriptionPaymentPage() {
       }
     }
     loadPlan();
-  }, [planId]);
+  }, [planId, planNameParam, amountParam, daysParam]);
 
   const handlePayment = async () => {
     if (!user || !selectedPlan) return;
     setIsProcessing(true);
 
     try {
-      const orderRes = await fetch('/api/subscriptions/razorpay-order', {
+      const amountInPaise = Math.max(100, Math.round(selectedPlan.price * 100));
+
+      const orderRes = await fetch('/api/razorpay/create-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          planId: selectedPlan.id,
-          planName: selectedPlan.name,
-          amount: selectedPlan.price,
-          durationDays: selectedPlan.durationDays,
-          userId: user.uid,
-          userEmail: user.email,
-          userName: user.displayName || 'Screenwriter'
+          amount: amountInPaise,
+          currency: 'INR'
         })
       });
 
@@ -130,32 +154,29 @@ export default function SubscriptionPaymentPage() {
         throw new Error(orderData.error || 'Failed to initialize payment gateway.');
       }
 
-      // Razorpay Checkout
       const options = {
-        key: orderData.razorpayKeyId,
+        key: orderData.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
         amount: orderData.amount,
         currency: orderData.currency || 'INR',
         name: 'Screenplay Pro',
         description: `Subscription: ${selectedPlan.name}`,
-        order_id: orderData.orderId,
+        order_id: orderData.id,
         handler: async function (response: any) {
           try {
-            const verifyRes = await fetch('/api/subscriptions/verify-payment', {
+            const activateRes = await fetch('/api/subscription/activate', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                razorpay_order_id: response.razorpay_order_id,
-                razorpay_payment_id: response.razorpay_payment_id,
-                razorpay_signature: response.razorpay_signature,
                 userId: user.uid,
                 planId: selectedPlan.id,
-                planName: selectedPlan.name,
-                durationDays: selectedPlan.durationDays
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature
               })
             });
 
-            const verifyData = await verifyRes.json();
-            if (verifyRes.ok && verifyData.success) {
+            const activateData = await activateRes.json();
+            if (activateRes.ok && activateData.success) {
               setIsSuccess(true);
               toast({
                 title: "Subscription Activated! 🎉",
@@ -165,7 +186,7 @@ export default function SubscriptionPaymentPage() {
                 router.push(returnUrl);
               }, 2500);
             } else {
-              throw new Error(verifyData.error || 'Payment verification failed.');
+              throw new Error(activateData.error || 'Payment activation failed.');
             }
           } catch (err: any) {
             toast({
@@ -182,7 +203,7 @@ export default function SubscriptionPaymentPage() {
           email: user.email || '',
         },
         theme: {
-          color: '#3b82f6'
+          color: '#0d9488'
         }
       };
 
@@ -228,7 +249,7 @@ export default function SubscriptionPaymentPage() {
         </Button>
 
         {isSuccess ? (
-          <Card className="border-emerald-500/30 bg-emerald-500/5 text-center p-8 space-y-4">
+          <Card className="border-emerald-500/30 bg-emerald-500/5 text-center p-8 space-y-4 shadow-lg">
             <div className="h-16 w-16 rounded-full bg-emerald-500/10 text-emerald-500 flex items-center justify-center mx-auto">
               <CheckCircle2 className="h-10 w-10" />
             </div>
