@@ -31,54 +31,53 @@ interface OsmAreaGeneratorDialogProps {
 // 4 Distinct SEO templates for Area-Category combinations
 const AREA_CATEGORY_TEMPLATES = [
   {
-    h1: "Hire Verified {categoryName}s in {areaName}, {cityName} - screenplaypro.in",
-    title: "Best {categoryName}s in {areaName}, {cityName} | Vetted Talent | screenplaypro.in",
-    description: "Find verified local {categoryName}s in {areaName}, {cityName} on screenplaypro.in. Connect with casting-ready talents for local projects, commercial shoots, and events near {areaName} and adjacent regions like {nearbyCities}.",
+    h1: "{categoryName} Tools in {areaName}, {cityName} - screenplaypro.in",
+    title: "Best {categoryName} in {areaName}, {cityName} | Screenplay Pro",
+    description: "Find advanced {categoryName} script writing tools for creators in {areaName}, {cityName} on screenplaypro.in. Build stories faster near {areaName} and nearby areas like {nearbyCities}.",
   },
   {
-    h1: "Top Vetted {categoryName}s in {areaName}, {cityName} | screenplaypro.in",
-    title: "Verified {categoryName}s in {areaName}, {cityName} | screenplaypro.in Casting",
-    description: "Discover professional local {categoryName}s in {areaName}, {cityName} on screenplaypro.in. Vetted creative talents are available for media productions, events, and bookings in neighbouring areas like {nearbyCities}.",
+    h1: "Top {categoryName} Studio in {areaName}, {cityName} | screenplaypro.in",
+    title: "Screenplay {categoryName} in {areaName}, {cityName} | screenplaypro.in",
+    description: "Access smart {categoryName} tools for screenwriting in {areaName}, {cityName} on screenplaypro.in. Generate scenes and outlines in neighbouring areas like {nearbyCities}.",
   },
   {
-    h1: "Connect with {categoryName}s in {areaName}, {cityName} on screenplaypro.in",
-    title: "{categoryName} Casting Directory in {areaName}, {cityName} | screenplaypro.in",
-    description: "Ultimate platform for hiring verified local {categoryName}s in {areaName}, {cityName} on screenplaypro.in. Explore booking portfolios and connect with production-ready artists near {areaName} and adjacent {nearbyCities}.",
+    h1: "Connect with {categoryName} Features in {areaName}, {cityName} on screenplaypro.in",
+    title: "{categoryName} Suite in {areaName}, {cityName} | screenplaypro.in",
+    description: "Ultimate platform for screenplay {categoryName} in {areaName}, {cityName} on screenplaypro.in. Explore writing features and create scripts near {areaName} and adjacent {nearbyCities}.",
   },
   {
-    h1: "Book Local {categoryName}s in {areaName}, {cityName} - screenplaypro.in",
-    title: "Book {categoryName}s in {areaName}, {cityName} | Vetted Portfolios | screenplaypro.in",
-    description: "Browse verified profiles of local {categoryName}s in {areaName}, {cityName} on screenplaypro.in. Direct messaging and casting invites for events, film, and media shoots near {areaName} and surrounding {nearbyCities}.",
+    h1: "Scriptwriting {categoryName} in {areaName}, {cityName} - screenplaypro.in",
+    title: "{categoryName} Tools in {areaName}, {cityName} | Screenplay Editor",
+    description: "Explore {categoryName} features in {areaName}, {cityName} on screenplaypro.in. Designed for scriptwriters, filmmakers, and storytellers near {areaName} and surrounding {nearbyCities}.",
   }
 ];
 
 // Helper to generate at least 20 rich keywords for area category page
 const generateAreaKeywordsList = (cityName: string, areaName: string, categoryName: string, nearbyAreas: string): string => {
   return [
-    `${areaName} ${categoryName}s`,
-    `hire ${categoryName}s in ${areaName}`,
-    `verified ${categoryName}s in ${areaName}`,
-    `book ${categoryName}s in ${areaName}`,
-    `best ${categoryName}s in ${areaName}`,
-    `casting calls for ${categoryName}s in ${areaName}`,
-    `${categoryName} auditions ${areaName}`,
-    `${areaName} creative talents`,
-    `hire local ${categoryName}s in ${areaName}`,
+    `${areaName} ${categoryName}`,
+    `${categoryName} in ${areaName}`,
+    `screenplay ${categoryName} in ${areaName}`,
+    `script writing ${areaName}`,
+    `best ${categoryName} in ${areaName}`,
+    `movie script editor ${areaName}`,
+    `screenplay outline ${areaName}`,
+    `${areaName} screenwriters`,
+    `script generator in ${areaName}`,
     `screenplaypro ${areaName}`,
-    `casting directors looking for ${categoryName}s in ${areaName}`,
-    `professional ${categoryName} bookings in ${areaName}`,
-    `entertainment jobs in ${areaName} ${cityName}`,
-    `${areaName} talent directory`,
-    `portfolio booking for ${categoryName}s in ${areaName}`,
-    `production crew in ${areaName}`,
-    `acting and modeling in ${areaName}`,
-    `hire artists in ${areaName} ${cityName}`,
-    `${categoryName}s near ${nearbyAreas}`,
-    `book local talents in ${nearbyAreas}`,
-    `casting options in ${nearbyAreas}`,
-    `creative professionals near ${nearbyAreas}`,
-    `screenplaypro.in casting call ${areaName}`,
-    `verified models and actors in ${areaName}`
+    `storyboard tools in ${areaName}`,
+    `script formatting in ${areaName}`,
+    `screenplay writing ${areaName} ${cityName}`,
+    `${areaName} scriptwriting app`,
+    `character generator in ${areaName}`,
+    `script analysis in ${areaName}`,
+    `dialogue editor in ${areaName}`,
+    `screenplay studio in ${areaName} ${cityName}`,
+    `${categoryName} near ${nearbyAreas}`,
+    `script writing tools in ${nearbyAreas}`,
+    `screenplay options in ${nearbyAreas}`,
+    `creative writers near ${nearbyAreas}`,
+    `screenplaypro.in scriptwriting ${areaName}`
   ].join(", ");
 };
 

@@ -206,7 +206,7 @@ export default function HomePageClient({ citySlug, areaSlug, breadcrumbItems, in
     {
       icon: <Sparkles className="h-8 w-8 text-amber-500" />,
       title: "Instant Script Translation",
-      description: "Translate your film or web series script between Indian regional languages and English with built-in AI tools."
+      description: "Translate your film or web series script between Indian regional languages and English with built-in translation tools."
     },
     {
       icon: <ShieldCheck className="h-8 w-8 text-rose-500" />,

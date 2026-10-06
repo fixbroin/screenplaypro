@@ -26,7 +26,7 @@ export async function generateMetadata(
   if (!pageData) return { title: `About Us | Screenplay Pro` };
 
   const title = pageData.metaTitle || `About Us | ${seoSettings.siteName || 'Screenplay Pro'}`;
-  const description = pageData.metaDescription || pageData.excerpt || "Learn more about Screenplay Pro - India's premier platform to discover and connect with top artists and creative talent.";
+  const description = pageData.metaDescription || pageData.excerpt || "Learn more about Screenplay Pro - India's leading screenplay writing, script formatting, and story creation platform for screenwriters, directors, and authors.";
 
   return {
     title: title,
@@ -77,7 +77,7 @@ export default async function AboutUsPage() {
     "name": "Screenplay Pro",
     "url": appBaseUrl,
     "logo": `${appBaseUrl}/android-chrome-512x512.png`,
-    "description": pageData.metaDescription || "Screenplay Pro is India's leading artist discovery platform, connecting people with professional actors, singers, technicians, and creative performers.",
+    "description": pageData.metaDescription || "Screenplay Pro is India's leading screenplay writing and script formatting platform for screenwriters, filmmakers, and storytellers.",
     "contactPoint": {
       "@type": "ContactPoint",
       "telephone": "+91-7353113455",

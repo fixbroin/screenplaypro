@@ -97,7 +97,7 @@ export default async function Page() {
     },
     "sameAs": Object.values(seoSettings.socialProfileUrls || {}).filter(url => !!url),
     "priceRange": "₹₹",
-    "keywords": "acting auditions, casting calls bangalore, film casting india, acting jobs, hire actors, casting agency bangalore"
+    "keywords": "screenplay writing, AI script writer, script formatting software, screenplay generator, movie script editor, screenplaypro"
   };
 
   if (aggregateRating) {

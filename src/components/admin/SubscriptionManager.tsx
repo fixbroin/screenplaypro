@@ -47,7 +47,7 @@ const DEFAULT_SCREENPLAY_PLANS: Partial<SubscriptionPlan>[] = [
     features: [
       'Unlimited PDF Script Exports (Save 45%)',
       'Studio-Standard Screenplay Formatting',
-      'Multi-Language Script Typing & AI Translation',
+      'Multi-Language Script Typing & Translation',
       'Priority High-Speed PDF Rendering',
       'Real-Time Cloud Autosave & Backup',
       'Priority Writer Support'
@@ -61,7 +61,7 @@ const DEFAULT_SCREENPLAY_PLANS: Partial<SubscriptionPlan>[] = [
     order: 3,
     features: [
       'Lifetime Unlimited PDF Downloads',
-      'All Future AI Script Tools Included',
+      'All Future Script Tools Included',
       'Priority High-Speed Rendering',
       'Multi-Language Translation Engine',
       'VIP Support'

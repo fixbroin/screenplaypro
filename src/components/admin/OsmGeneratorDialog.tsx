@@ -30,187 +30,174 @@ interface OsmGeneratorDialogProps {
 }
 
 // 4 Distinct SEO templates for City-Specific Homepages (/[citySlug])
-// Mentioning screenplaypro.in, casting platform purpose, and nearby locations.
+// Mentioning screenplaypro.in, screenplay & scriptwriting platform purpose, and nearby locations.
 const CITY_TEMPLATES = [
   {
-    h1: "Hire Actors, Models & Creative Talents in {cityName} on screenplaypro.in",
-    title: "Verified Artists & Talents in {cityName} | screenplaypro.in",
-    description: "Connect directly with casting directors, actors, models, and singers in {cityName} on screenplaypro.in. Explore vetted creative professionals in {cityName} and nearby areas like {nearbyCities}.",
-    keywords: "{cityName} artists, screenplaypro, hire actors {cityName}, models in {cityName}, creative hub {nearbyCities}"
+    h1: "Screenplay & Script Writing Platform in {cityName} on screenplaypro.in",
+    title: "Screenplay Writer & Scriptwriting Tools in {cityName} | screenplaypro.in",
+    description: "Write, format, and analyze screenplays in {cityName} on screenplaypro.in. Access professional scriptwriting tools, character outlines, and storyboards across {cityName} and nearby regions like {nearbyCities}.",
+    keywords: "{cityName} screenplay writer, screenplaypro, script writer {cityName}, script formatting {cityName}, screenwriting tool {nearbyCities}"
   },
   {
-    h1: "Connect with Verified Professionals in {cityName} | screenplaypro.in",
-    title: "Best Castings & Creative Talents in {cityName} - screenplaypro.in",
-    description: "Discover vetted creative talents in {cityName} for film, photography, and advertising. Book local talent easily across {cityName} and neighbouring areas like {nearbyCities} on screenplaypro.in.",
-    keywords: "casting call {cityName}, local models {cityName}, singers {cityName}, screenplaypro booking {nearbyCities}"
+    h1: "Professional Scriptwriting & Storyboard Tools in {cityName} | screenplaypro.in",
+    title: "Best Screenplay Writing & Script Analysis in {cityName} - screenplaypro.in",
+    description: "Empowering screenwriters, filmmakers, and playwrights in {cityName} with script formatting, scene breakdown, and plot outlining on screenplaypro.in across {cityName} and nearby areas like {nearbyCities}.",
+    keywords: "screenplay writing {cityName}, script generator {cityName}, plot outline tool {cityName}, screenplaypro {nearbyCities}"
   },
   {
-    h1: "{cityName} Talent Directory: Hire Artists on screenplaypro.in",
-    title: "Top Actors & Models in {cityName} | Directory | screenplaypro.in",
-    description: "Find verified actors, singers, and models in {cityName} on screenplaypro.in. Hire the best local creatives for events and media shoots in {cityName} and surrounding {nearbyCities}.",
-    keywords: "{cityName} talent agency, hire singers {cityName}, actors {cityName}, screenplaypro directory {nearbyCities}"
+    h1: "{cityName} Screenwriter Hub: Script Formatting on screenplaypro.in",
+    title: "Top Screenplay Writer in {cityName} | Software | screenplaypro.in",
+    description: "Transform story ideas into production-ready scripts in {cityName} on screenplaypro.in. Built-in industry standard formatting and character development tools for creators in {cityName} and surrounding {nearbyCities}.",
+    keywords: "{cityName} scriptwriter app, scene breakdown {cityName}, movie script tool {cityName}, screenplaypro {nearbyCities}"
   },
   {
-    h1: "Cast & Book Vetted Artists in {cityName} - screenplaypro.in",
-    title: "Artist Booking & Casting in {cityName} | screenplaypro.in",
-    description: "screenplaypro.in helps you hire creative artists in {cityName} for event and film productions. Connect with premium local talents in {cityName} and nearby {nearbyCities}.",
-    keywords: "production crew {cityName}, book models {cityName}, talent hub {cityName}, screenplaypro casting {nearbyCities}"
+    h1: "Hollywood-Standard Screenplay Editor in {cityName} - screenplaypro.in",
+    title: "Scriptwriting & Screenplay Analysis in {cityName} | screenplaypro.in",
+    description: "screenplaypro.in offers professional screenplay writing and structural analysis for writers in {cityName}. Streamline scriptwriting and story development in {cityName} and nearby {nearbyCities}.",
+    keywords: "screenplay editor {cityName}, story outline {cityName}, script analysis {cityName}, screenplaypro studio {nearbyCities}"
   }
 ];
 
 // 4 Distinct SEO templates for City-Category combinations (/[citySlug]/category/[categorySlug])
 const CITY_CATEGORY_TEMPLATES = [
   {
-    h1: "Hire Verified {categoryName}s in {cityName} - screenplaypro.in",
-    title: "Best {categoryName}s in {cityName} | Casting & Booking | screenplaypro.in",
-    description: "Connect with top verified {categoryName}s in {cityName} on screenplaypro.in. Perfect for casting calls, shoots, and creative projects in {cityName} and nearby {nearbyCities}.",
-    keywords: "hire {categoryName} in {cityName}, screenplaypro {cityName}, castings for {categoryName}s, creative hub {nearbyCities}"
+    h1: "{categoryName} Services in {cityName} - screenplaypro.in",
+    title: "Best {categoryName} Tools in {cityName} | Scriptwriting | screenplaypro.in",
+    description: "Accelerate your writing workflow with {categoryName} tools in {cityName} on screenplaypro.in. Perfect for screenwriters, directors, and authors in {cityName} and nearby {nearbyCities}.",
+    keywords: "{categoryName} in {cityName}, screenplaypro {cityName}, scriptwriting {categoryName}, creative writing {nearbyCities}"
   },
   {
-    h1: "Top {categoryName}s in {cityName} for Castings & Media Projects | screenplaypro.in",
-    title: "{categoryName}s in {cityName} | Vetted Talents | screenplaypro.in",
-    description: "Discover professional {categoryName}s in {cityName} on screenplaypro.in. Vetted portfolios ready for film, modeling, and advertising bookings in {cityName} and neighbouring {nearbyCities}.",
-    keywords: "casting {categoryName}s {cityName}, screenplaypro.in talent, local {categoryName} {cityName}, {nearbyCities}"
+    h1: "Top {categoryName} Builder in {cityName} | screenplaypro.in",
+    title: "{categoryName} for Screenwriters in {cityName} | screenplaypro.in",
+    description: "Discover intelligent {categoryName} solutions in {cityName} on screenplaypro.in. Formatted for feature films, TV shows, short films, and stage plays in {cityName} and neighbouring {nearbyCities}.",
+    keywords: "screenplay {categoryName} {cityName}, screenplaypro.in scriptwriting, local script tool {cityName}, {nearbyCities}"
   },
   {
-    h1: "Discover Verified {categoryName}s in {cityName} on screenplaypro.in",
-    title: "Verified {categoryName}s in {cityName} Directory - screenplaypro.in",
-    description: "Browse the ultimate directory of verified {categoryName}s in {cityName} on screenplaypro.in. Book casting calls, modeling assignments, and creative projects in {cityName} and adjacent regions like {nearbyCities}.",
-    keywords: "{cityName} {categoryName} talent, hire actor model {cityName}, screenplaypro directory, {nearbyCities}"
+    h1: "Discover {categoryName} Suite in {cityName} on screenplaypro.in",
+    title: "{categoryName} Tool in {cityName} | screenplaypro.in",
+    description: "Explore the ultimate {categoryName} studio for screenwriters in {cityName} on screenplaypro.in. Craft compelling narratives and industry-standard scripts in {cityName} and adjacent regions like {nearbyCities}.",
+    keywords: "{cityName} {categoryName} tool, scriptwriter {cityName}, screenplaypro software, {nearbyCities}"
   },
   {
-    h1: "Hire Local {categoryName}s in {cityName} for Film & Photography | screenplaypro.in",
-    title: "Professional {categoryName} Booking in {cityName} | screenplaypro.in",
-    description: "Book verified {categoryName}s in {cityName} through screenplaypro.in - the premier local talent network. Direct messaging with creative professionals in {cityName} and nearby {nearbyCities}.",
-    keywords: "book {categoryName}s {cityName}, casting hub {cityName}, screenplaypro portfolio, {nearbyCities}"
+    h1: "Professional {categoryName} Studio in {cityName} | screenplaypro.in",
+    title: "{categoryName} Software in {cityName} | screenplaypro.in",
+    description: "Write and format scripts easily with {categoryName} features in {cityName} through screenplaypro.in. Designed for aspiring and professional writers in {cityName} and nearby {nearbyCities}.",
+    keywords: "write {categoryName} {cityName}, screenplay studio {cityName}, screenplaypro suite, {nearbyCities}"
   }
 ];
 
 // 4 Distinct SEO templates for Area-Category combinations (/[citySlug]/[areaSlug]/category/[categorySlug])
 const AREA_CATEGORY_TEMPLATES = [
   {
-    h1: "Hire {categoryName}s in {areaName}, {cityName} - screenplaypro.in",
-    title: "Best {categoryName}s in {areaName}, {cityName} | Vetted Talent | screenplaypro",
-    description: "Find verified local {categoryName}s in {areaName}, {cityName} on screenplaypro.in. Contact casting-ready talents for local projects near {areaName} and nearby areas like {nearbyCities}.",
-    keywords: "{areaName} {categoryName}s, hire {categoryName} {areaName}, casting calls, screenplaypro {nearbyCities}"
+    h1: "{categoryName} Tools in {areaName}, {cityName} - screenplaypro.in",
+    title: "Best {categoryName} in {areaName}, {cityName} | Screenplay Pro",
+    description: "Find advanced {categoryName} script writing tools for creators in {areaName}, {cityName} on screenplaypro.in. Build stories faster near {areaName} and nearby areas like {nearbyCities}.",
+    keywords: "{areaName} {categoryName}, script writing {areaName}, screenplaypro {nearbyCities}"
   },
   {
-    h1: "Top Vetted {categoryName}s in {areaName}, {cityName} | screenplaypro.in",
-    title: "Verified {categoryName}s in {areaName}, {cityName} | screenplaypro.in",
-    description: "Discover professional local {categoryName}s in {areaName}, {cityName} on screenplaypro.in. Vetted talents available for local shoots and bookings in neighbouring {nearbyCities}.",
-    keywords: "creative {categoryName}s {areaName}, {areaName} models, casting, {nearbyCities} creative talent"
+    h1: "Top {categoryName} Studio in {areaName}, {cityName} | screenplaypro.in",
+    title: "Screenplay {categoryName} in {areaName}, {cityName} | screenplaypro.in",
+    description: "Access smart {categoryName} tools for screenwriting in {areaName}, {cityName} on screenplaypro.in. Generate scenes and outlines in neighbouring areas like {nearbyCities}.",
+    keywords: "creative {categoryName} {areaName}, screenplay tool {areaName}, {nearbyCities} scriptwriting"
   },
   {
-    h1: "Connect with {categoryName}s in {areaName}, {cityName} on screenplaypro.in",
-    title: "{categoryName} Directory in {areaName}, {cityName} | screenplaypro.in",
-    description: "Ultimate portal for hiring verified {categoryName}s in {areaName}, {cityName} on screenplaypro.in. Search casting call opportunities and connect with artists near {areaName} and adjacent {nearbyCities}.",
-    keywords: "{areaName} talent, hire {categoryName}s {areaName}, screenplaypro directory, local casting {nearbyCities}"
+    h1: "Connect with {categoryName} Features in {areaName}, {cityName} on screenplaypro.in",
+    title: "{categoryName} Suite in {areaName}, {cityName} | screenplaypro.in",
+    description: "Ultimate platform for screenplay {categoryName} in {areaName}, {cityName} on screenplaypro.in. Craft scripts and character arcs near {areaName} and adjacent {nearbyCities}.",
+    keywords: "{areaName} scriptwriter, {categoryName} studio {areaName}, screenplaypro app, local writing {nearbyCities}"
   },
   {
-    h1: "Book Local {categoryName}s in {areaName}, {cityName} - screenplaypro.in",
-    title: "Book {categoryName}s in {areaName}, {cityName} | Vetted Portfolios",
-    description: "Browse portfolios of local {categoryName}s in {areaName}, {cityName} on screenplaypro.in. Send direct booking invites to actors, models, and singers near {areaName} and adjacent {nearbyCities}.",
-    keywords: "{categoryName} booking {areaName}, casting directory {areaName}, screenplaypro profile, local booking {nearbyCities}"
+    h1: "Scriptwriting {categoryName} in {areaName}, {cityName} - screenplaypro.in",
+    title: "{categoryName} Tools in {areaName}, {cityName} | Screenplay Editor",
+    description: "Explore {categoryName} features in {areaName}, {cityName} on screenplaypro.in. Perfect for scriptwriters and creators near {areaName} and adjacent {nearbyCities}.",
+    keywords: "{categoryName} writing {areaName}, screenplay app {areaName}, screenplaypro profile, local scriptwriting {nearbyCities}"
   }
 ];
+
 // Helper to generate at least 20 rich keywords for city or category pages
 const generateKeywordsList = (cityName: string, categoryName?: string, nearbyAreas?: string): string => {
   const parts = [];
   
   if (categoryName) {
     parts.push(
-      `${cityName} ${categoryName}s`,
-      `hire ${categoryName}s in ${cityName}`,
-      `verified ${categoryName}s in ${cityName}`,
-      `book ${categoryName}s in ${cityName}`,
-      `best ${categoryName}s in ${cityName}`,
-      `casting calls for ${categoryName}s in ${cityName}`,
-      `${categoryName} auditions ${cityName}`,
-      `${cityName} creative talents`,
-      `hire local ${categoryName}s`,
+      `${cityName} ${categoryName}`,
+      `${categoryName} in ${cityName}`,
+      `screenplay ${categoryName} in ${cityName}`,
+      `scriptwriting ${categoryName} in ${cityName}`,
+      `best ${categoryName} tool in ${cityName}`,
+      `film script formatting ${cityName}`,
+      `movie script outline ${cityName}`,
+      `${cityName} screenwriting software`,
       `screenplaypro ${cityName}`,
-      `casting directors looking for ${categoryName}s in ${cityName}`,
-      `professional ${categoryName} bookings ${cityName}`,
-      `entertainment jobs in ${cityName}`,
-      `${cityName} talent directory`,
-      `portfolio booking for ${categoryName}s in ${cityName}`,
-      `production crew ${cityName}`,
-      `acting and modeling in ${cityName}`,
-      `hire artists in ${cityName}`,
-      `screenplaypro.in castings ${cityName}`,
-      `casting ready artists ${cityName}`
+      `professional script editor ${cityName}`,
+      `storyboard generator in ${cityName}`,
+      `character arc tool ${cityName}`,
+      `dialogue formatting in ${cityName}`,
+      `screenplay analysis in ${cityName}`,
+      `scene breakdown app ${cityName}`,
+      `screenplaypro.in ${cityName}`
     );
     if (nearbyAreas) {
       parts.push(
-        `${categoryName}s near ${nearbyAreas}`,
-        `book local talents in ${nearbyAreas}`,
-        `casting options in ${nearbyAreas}`,
-        `creative professionals near ${nearbyAreas}`
+        `${categoryName} near ${nearbyAreas}`,
+        `script writing in ${nearbyAreas}`,
+        `screenplay tools in ${nearbyAreas}`,
+        `story writer near ${nearbyAreas}`
       );
     }
   } else {
     parts.push(
-      `${cityName} artists`,
-      `hire talent in ${cityName}`,
-      `actors in ${cityName}`,
-      `models in ${cityName}`,
-      `singers in ${cityName}`,
-      `verified talents in ${cityName}`,
+      `${cityName} screenplay writing`,
+      `script writer ${cityName}`,
+      `screenplay editor ${cityName}`,
+      `script formatting software ${cityName}`,
+      `storyboard builder ${cityName}`,
+      `movie script tool ${cityName}`,
+      `screenplay analysis ${cityName}`,
+      `character generator ${cityName}`,
+      `plot outline tool ${cityName}`,
       `screenplaypro ${cityName}`,
-      `casting directors in ${cityName}`,
-      `entertainment hub ${cityName}`,
-      `creative professionals in ${cityName}`,
-      `auditions in ${cityName}`,
-      `production crew hire ${cityName}`,
-      `artist directory ${cityName}`,
-      `photographers in ${cityName}`,
-      `event planners ${cityName}`,
-      `media jobs in ${cityName}`,
-      `hire local artists in ${cityName}`,
-      `talent casting platform ${cityName}`,
-      `screenplaypro.in network ${cityName}`,
-      `casting calls in ${cityName}`
+      `best screenplay app in ${cityName}`,
+      `creative script writer ${cityName}`
     );
     if (nearbyAreas) {
       parts.push(
-        `artists near ${nearbyAreas}`,
-        `creative talent in ${nearbyAreas}`,
-        `casting calls around ${nearbyAreas}`,
-        `book local talent in ${nearbyAreas}`
+        `screenplay writing near ${nearbyAreas}`,
+        `script generator in ${nearbyAreas}`,
+        `screenwriting app near ${nearbyAreas}`
       );
     }
   }
-  
+
   return parts.join(", ");
 };
 
 // Helper to generate at least 20 rich keywords for area category page
 const generateAreaKeywordsList = (cityName: string, areaName: string, categoryName: string, nearbyAreas: string): string => {
   return [
-    `${areaName} ${categoryName}s`,
-    `hire ${categoryName}s in ${areaName}`,
-    `verified ${categoryName}s in ${areaName}`,
-    `book ${categoryName}s in ${areaName}`,
-    `best ${categoryName}s in ${areaName}`,
-    `casting calls for ${categoryName}s in ${areaName}`,
-    `${categoryName} auditions ${areaName}`,
-    `${areaName} creative talents`,
-    `hire local ${categoryName}s in ${areaName}`,
+    `${areaName} ${categoryName}`,
+    `${categoryName} in ${areaName}`,
+    `screenplay ${categoryName} in ${areaName}`,
+    `script writing ${areaName}`,
+    `best ${categoryName} in ${areaName}`,
+    `movie script editor ${areaName}`,
+    `screenplay outline ${areaName}`,
+    `${areaName} screenwriters`,
+    `script generator in ${areaName}`,
     `screenplaypro ${areaName}`,
-    `casting directors looking for ${categoryName}s in ${areaName}`,
-    `professional ${categoryName} bookings in ${areaName}`,
-    `entertainment jobs in ${areaName} ${cityName}`,
-    `${areaName} talent directory`,
-    `portfolio booking for ${categoryName}s in ${areaName}`,
-    `production crew in ${areaName}`,
-    `acting and modeling in ${areaName}`,
-    `hire artists in ${areaName} ${cityName}`,
-    `${categoryName}s near ${nearbyAreas}`,
-    `book local talents in ${nearbyAreas}`,
-    `casting options in ${nearbyAreas}`,
-    `creative professionals near ${nearbyAreas}`,
-    `screenplaypro.in casting call ${areaName}`,
-    `verified models and actors in ${areaName}`
+    `storyboard tools in ${areaName}`,
+    `script formatting in ${areaName}`,
+    `screenplay writing ${areaName} ${cityName}`,
+    `${areaName} scriptwriting app`,
+    `character generator in ${areaName}`,
+    `script analysis in ${areaName}`,
+    `dialogue editor in ${areaName}`,
+    `screenplay studio in ${areaName} ${cityName}`,
+    `${categoryName} near ${nearbyAreas}`,
+    `script writing tools in ${nearbyAreas}`,
+    `screenplay options in ${nearbyAreas}`,
+    `creative writers near ${nearbyAreas}`,
+    `screenplaypro.in scriptwriting ${areaName}`
   ].join(", ");
 };
 

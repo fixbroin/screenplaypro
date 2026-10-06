@@ -30,6 +30,8 @@ const prompt = ai.definePrompt({
   prompt: `You are an expert Screenplay & Film SEO copywriter for Screenplay Pro (online screenplay writing software and film scriptwriters platform operating in India).
 Your task is to generate intent-driven SEO content for a city landing page to rank #1 on Google for scriptwriting and screenplay searches in that city.
 
+IMPORTANT RULE: Do NOT use the words 'AI', 'AI-powered', or 'AI-assisted' in any of the generated titles, descriptions, or keywords.
+
 City Name: {{cityName}}
 
 Based on the city name, generate the following content:

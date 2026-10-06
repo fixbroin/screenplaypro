@@ -252,7 +252,7 @@ export default function CityCategorySeoForm({ initialData, cities, categories, e
             <div className="flex gap-2">
               <FormControl>
                 <Input 
-                  placeholder="e.g., bangalore/male-actor (will autogenerate if empty)" 
+                  placeholder="e.g., bangalore/scriptwriting (will autogenerate if empty)" 
                   {...field} 
                   value={field.value || ""} 
                   disabled={isSubmitting}
@@ -302,7 +302,7 @@ export default function CityCategorySeoForm({ initialData, cities, categories, e
         <FormField control={form.control} name="h1_title" render={({ field }) => (
           <FormItem>
             <FormLabel>H1 Title</FormLabel>
-            <FormControl><Input placeholder="e.g., Best Professional Male Actors in Bangalore" {...field} value={field.value || ""} disabled={isSubmitting}/></FormControl>
+            <FormControl><Input placeholder="e.g., Professional Screenplay Writing Tools in Bangalore" {...field} value={field.value || ""} disabled={isSubmitting}/></FormControl>
             <FormMessage />
           </FormItem>
         )} />
@@ -334,7 +334,7 @@ export default function CityCategorySeoForm({ initialData, cities, categories, e
         <FormField control={form.control} name="imageHint" render={({ field }) => (
           <FormItem>
             <FormLabel>Image Alt Text Hint (Optional)</FormLabel>
-            <FormControl><Input placeholder="e.g., Hire actors in Bangalore, creative crew portfolios..." {...field} value={field.value || ""} disabled={isSubmitting}/></FormControl>
+            <FormControl><Input placeholder="e.g., Screenplay writer tools, script formatting studio in Bangalore..." {...field} value={field.value || ""} disabled={isSubmitting}/></FormControl>
             <FormDescription>Used for dynamically indexing related search images.</FormDescription>
             <FormMessage />
           </FormItem>

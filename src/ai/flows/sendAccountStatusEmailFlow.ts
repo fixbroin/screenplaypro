@@ -117,8 +117,8 @@ const accountStatusEmailFlow = ai.defineFlow(
       ? `
         <p>Hi ${userName},</p>
         <p>We are pleased to inform you that your account on <strong>${siteName}</strong> has been successfully activated by our team.</p>
-        <p>You can now log in, search for opportunities, showcase your modeling/acting portfolio, and connect with casting directors.</p>
-        <p><a href="${loginUrl}" class="button">Log In to Your Profile</a></p>
+        <p>You can now log in, access your scriptwriting dashboard, generate screenplays, and format Hollywood-standard scripts.</p>
+        <p><a href="${loginUrl}" class="button">Log In to Screenplay Pro</a></p>
         <p>Welcome to our community!</p>
         <p>Thanks,<br>The ${siteName} Team</p>
       `

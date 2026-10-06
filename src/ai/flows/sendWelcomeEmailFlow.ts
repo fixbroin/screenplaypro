@@ -107,35 +107,35 @@ const welcomeEmailFlow = ai.defineFlow(
     
     const canAttemptRealEmail = smtpHost && smtpPort && smtpUser && smtpPass && senderEmail;
 
-    const categoriesUrl = `${getBaseUrl()}/categories`;
-    const artistRegistrationUrl = `${getBaseUrl()}/artist-registration`;
+    const scriptWritingUrl = `${getBaseUrl()}/script-writing`;
+    const subscriptionsUrl = `${getBaseUrl()}/subscriptions`;
     const emailSubject = `Welcome to ${siteName}, ${userName}!`;
     const emailBodyContent = `
         <p>Hi ${userName},</p>
-        <p>Welcome to ${siteName}! We are thrilled to have you join our community.</p>
-        <p>Whether you want to showcase your portfolio to get hired by top production houses, or search and connect with verified talents across India, we have you covered.</p>
+        <p>Welcome to ${siteName}! We are thrilled to have you join our screenplay writing community.</p>
+        <p>Whether you are crafting your first feature film, TV series, short movie, or theatrical play, Screenplay Pro empowers you with plot outlining, Hollywood-standard formatting, character builders, and scene breakdowns.</p>
         
         <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin: 25px 0;">
           <tr>
             <td width="50%" align="center" style="padding-right: 10px; vertical-align: top;">
               <div style="background-color: #f0fdfa; border: 1px solid #ccfbf1; border-radius: 12px; padding: 20px; text-align: center; height: 100%;">
-                <h3 style="color: #0d9488; font-size: 14px; margin-top: 0; margin-bottom: 8px; text-transform: uppercase; font-weight: bold; letter-spacing: 0.5px;">Are you a Creator?</h3>
-                <p style="font-size: 12px; color: #4b5563; margin-bottom: 15px; min-height: 48px; line-height: 1.4;">Register your profile, build your portfolio, and get discovered by casting directors.</p>
-                <a href="${artistRegistrationUrl}" style="background-color: #0d9488; color: #ffffff !important; display: inline-block; padding: 10px 18px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 13px;">Register as Artist</a>
+                <h3 style="color: #0d9488; font-size: 14px; margin-top: 0; margin-bottom: 8px; text-transform: uppercase; font-weight: bold; letter-spacing: 0.5px;">Start Writing</h3>
+                <p style="font-size: 12px; color: #4b5563; margin-bottom: 15px; min-height: 48px; line-height: 1.4;">Create new screenplays, outline plots, and format scenes instantly.</p>
+                <a href="${scriptWritingUrl}" style="background-color: #0d9488; color: #ffffff !important; display: inline-block; padding: 10px 18px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 13px;">Write Screenplay</a>
               </div>
             </td>
             <td width="50%" align="center" style="padding-left: 10px; vertical-align: top;">
               <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; text-align: center; height: 100%;">
-                <h3 style="color: #0f172a; font-size: 14px; margin-top: 0; margin-bottom: 8px; text-transform: uppercase; font-weight: bold; letter-spacing: 0.5px;">Hiring Talent?</h3>
-                <p style="font-size: 12px; color: #4b5563; margin-bottom: 15px; min-height: 48px; line-height: 1.4;">Browse verified models, actors, singers, and crew members by category.</p>
-                <a href="${categoriesUrl}" style="background-color: #475569; color: #ffffff !important; display: inline-block; padding: 10px 18px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 13px;">Explore Categories</a>
+                <h3 style="color: #0f172a; font-size: 14px; margin-top: 0; margin-bottom: 8px; text-transform: uppercase; font-weight: bold; letter-spacing: 0.5px;">Pro Features</h3>
+                <p style="font-size: 12px; color: #4b5563; margin-bottom: 15px; min-height: 48px; line-height: 1.4;">Explore character builders, script exports, and pro plans.</p>
+                <a href="${subscriptionsUrl}" style="background-color: #475569; color: #ffffff !important; display: inline-block; padding: 10px 18px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 13px;">View Plans</a>
               </div>
             </td>
           </tr>
         </table>
 
-        <p>If you have any questions or need assistance setting up, feel free to reach out to our team at any time.</p>
-        <p>Thanks,<br>The ${siteName} Team</p>
+        <p>If you have any questions or need assistance, feel free to reach out to our team at any time.</p>
+        <p>Happy Writing,<br>The ${siteName} Team</p>
     `;
     const htmlBody = createHtmlTemplate(`Welcome to ${siteName}!`, emailBodyContent, siteName, logoUrl);
 
