@@ -237,7 +237,6 @@ const AppLayout: React.FC<PropsWithChildren> = ({ children }) => {
   useEffect(() => {
     if (isClientMounted) { 
       const currentIsAdminRoute = pathname.startsWith('/admin');
-      const currentIsArtistRoute = pathname.startsWith('/artist'); 
       const currentIsAuthRoute = pathname.startsWith('/auth/');
       const currentIsCheckoutRoute = pathname.startsWith('/checkout');
       
@@ -266,7 +265,6 @@ const AppLayout: React.FC<PropsWithChildren> = ({ children }) => {
       
       setShowFooter(
         !currentIsAdminRoute &&
-        !currentIsArtistRoute && 
         !currentIsAuthRoute &&
         !currentIsCheckoutRoute &&
         !shouldShowBottomNav && 
@@ -302,8 +300,7 @@ const AppLayout: React.FC<PropsWithChildren> = ({ children }) => {
     if (isClientMounted && user && !authIsLoading) {
         const isAuthPage = pathname.startsWith('/auth/');
         const isAdminPage = pathname.startsWith('/admin/');
-        const isArtistPage = pathname.startsWith('/artist/');
-        if (!isAuthPage && !isAdminPage && !isArtistPage) { 
+        if (!isAuthPage && !isAdminPage) { 
             fetchPendingReview();
         }
     }
@@ -320,15 +317,13 @@ const AppLayout: React.FC<PropsWithChildren> = ({ children }) => {
   }, [fetchPendingReview]);
 
   const isScriptEditor = pathname.startsWith('/script-writing/') || pathname.startsWith('/script/');
-  const shouldShowHeader = isClientMounted && !pathname.startsWith('/admin') && !pathname.startsWith('/artist') && !pathname.startsWith('/auth/') && !isScriptEditor;
-  const shouldShowNewsletterPopupManager = isClientMounted && !pathname.startsWith('/admin') && !pathname.startsWith('/artist') && !isScriptEditor;
-  const shouldShowGlobalAdminPopup = isClientMounted && !pathname.startsWith('/admin') && !pathname.startsWith('/artist') && !isScriptEditor;
+  const shouldShowHeader = isClientMounted && !pathname.startsWith('/admin') && !pathname.startsWith('/auth/') && !isScriptEditor;
+  const shouldShowNewsletterPopupManager = isClientMounted && !pathname.startsWith('/admin') && !isScriptEditor;
+  const shouldShowGlobalAdminPopup = isClientMounted && !pathname.startsWith('/admin') && !isScriptEditor;
   const shouldShowPwaInstallButton = isClientMounted && !pathname.startsWith('/category/') && !pathname.includes('/category/') && !pathname.startsWith('/kannadasgotlatent') && !isScriptEditor;
 
   const hideFooterPrefixes = [
     '/admin',
-    '/artist-registration',
-    '/artist/profile',
     '/script-writing/',
     '/script/',
     '/kannadasgotlatent',

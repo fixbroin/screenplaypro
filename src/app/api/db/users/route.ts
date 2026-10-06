@@ -170,7 +170,6 @@ export async function DELETE(req: NextRequest) {
       try {
         await Promise.all([
           adminDb.collection('users').doc(userId).delete().catch(() => {}),
-          adminDb.collection('ArtistApplications').doc(userId).delete().catch(() => {}),
           adminDb.collection('accountDeletionRequests').doc(userId).delete().catch(() => {})
         ]);
         console.log(`[Users API DELETE] Cleaned Firestore documents for user: ${userId}`);

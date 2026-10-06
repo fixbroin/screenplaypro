@@ -10,21 +10,20 @@ import type {
     FirestoreSEOSettings,
     FirestoreCategory,
     FirestoreSubCategory,
-    FirestoreService,
-    ArtistApplication
+    FirestoreService
 } from '@/types/firestore';
 import { unstable_cache } from 'next/cache';
 import { cache } from 'react';
 
 export interface HomepageData {
     featuresConfig: FeaturesConfiguration;
-    popularArtists: ArtistApplication[];
-    recentArtists: ArtistApplication[];
+    popularArtists: any[];
+    recentArtists: any[];
     categoriesWithArtists: Array<{
         categoryId: string;
         categoryName: string;
         categorySlug: string;
-        artists: ArtistApplication[];
+        artists: any[];
     }>;
     seoSettings: FirestoreSEOSettings;
     webSettings: GlobalWebSettings | null;
@@ -108,7 +107,7 @@ export const getHomepageData = cache(async (): Promise<HomepageData> => {
 export interface FullCategoryData {
     category: FirestoreCategory;
     subCategories: Array<FirestoreSubCategory & { services: FirestoreService[] }>;
-    artists: ArtistApplication[];
+    artists: any[];
     seoSettings: FirestoreSEOSettings;
 }
 
@@ -116,7 +115,7 @@ export const getCategoryFullData = cache(async (categorySlug: string): Promise<F
     return null;
 });
 
-export const getCategoryArtists = cache(async (categoryId: string, cityId?: string, areaId?: string): Promise<ArtistApplication[]> => {
+export const getCategoryArtists = cache(async (categoryId: string, cityId?: string, areaId?: string): Promise<any[]> => {
     return [];
 });
 

@@ -59,7 +59,6 @@ const NavLink = ({ href, children, onClick, isButton = false }: { href?: string;
 
 const Header = () => {
   const [isSearchPopupOpen, setIsSearchPopupOpen] = useState(false);
-  const [showSubscriptionPlans, setShowSubscriptionPlans] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const { user, firestoreUser, logOut, isLoading: authIsLoading, triggerAuthRedirect } = useAuth();
@@ -173,27 +172,6 @@ const Header = () => {
     const currentClientPath = window.location.pathname + window.location.search + window.location.hash;
     if (intendedHref !== currentClientPath && !intendedHref.startsWith('#')) showLoading();
     router.push(intendedHref);
-    if (isMobileMenuOpen) setIsMobileMenuOpen(false);
-  };
-
-  const handleJoinAsArtist = (e: React.MouseEvent) => {
-    e.preventDefault();
-    
-    // 1. Auth Check
-    if (!user) {
-        triggerAuthRedirect('/artist-registration');
-        return;
-    }
-
-    // 2. Admin Settings & Subscription Check
-    if (!isLoadingFeaturesConfig && featuresConfig?.isSubscriptionRequired && !firestoreUser?.subscriptionActive) {
-        setShowSubscriptionPlans(true);
-        return;
-    }
-
-    // 3. Proceed
-    showLoading();
-    router.push('/artist-registration');
     if (isMobileMenuOpen) setIsMobileMenuOpen(false);
   };
 

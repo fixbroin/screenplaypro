@@ -71,7 +71,6 @@ export async function POST(req: NextRequest) {
     if (adminDb) {
       const dbCleanups = [
         adminDb.collection('users').doc(targetUserId).delete().catch(() => {}),
-        adminDb.collection('ArtistApplications').doc(targetUserId).delete().catch(() => {}),
         adminDb.collection('accountDeletionRequests').doc(targetUserId).delete().catch(() => {})
       ];
       await Promise.all(dbCleanups);
