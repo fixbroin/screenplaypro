@@ -1,11 +1,10 @@
-import { adminDb } from '@/lib/firebaseAdmin';
+import { queryDb } from '@/lib/mysql';
 import { notFound } from 'next/navigation';
 import type { FirestoreBlogPost, ClientBlogPost } from '@/types/firestore';
 import AppImage from '@/components/ui/AppImage';
 import { ArrowRight, Calendar, User, Clock } from 'lucide-react';
 import Link from 'next/link';
 import { format } from 'date-fns';
-import { Timestamp } from 'firebase-admin/firestore';
 import JsonLdScript from '@/components/shared/JsonLdScript';
 import { getBaseUrl } from '@/lib/config';
 import type { Metadata } from 'next';
@@ -16,13 +15,10 @@ import { cache } from 'react';
 import { unstable_cache } from 'next/cache';
 import BreadcrumbSchema from '@/components/shared/BreadcrumbSchema';
 import Breadcrumbs from '@/components/shared/Breadcrumbs';
+import { DEFAULT_BLOG_POSTS } from '@/config/defaultContent';
 
 export const revalidate = false; // Persistent Cache
 
-/**
- * Server-side helper to safely get milliseconds from various timestamp formats.
- * Important for Server Components handling both Admin SDK and serialized client-side data.
- */
 function getTimestampMillis(ts: any): number {
   if (!ts) return 0;
   if (typeof ts.toMillis === 'function') return ts.toMillis();
@@ -46,17 +42,23 @@ const getBlogPost = cache(async (slug: string): Promise<FirestoreBlogPost | null
   return unstable_cache(
     async () => {
       try {
-        const blogRef = adminDb.collection('blogPosts');
-        const q = blogRef.where('slug', '==', slug).where('isPublished', '==', true).limit(1);
-        const snapshot = await q.get();
-        
-        if (snapshot.empty) return null;
-        
-        const doc = snapshot.docs[0];
-        return { id: doc.id, ...doc.data() } as FirestoreBlogPost;
+        const rows = await queryDb<any[]>(
+          "SELECT id, data FROM generic_collections WHERE collection_name = 'blogPosts'"
+        );
+        for (const row of rows) {
+          try {
+            const data = JSON.parse(row.data) as FirestoreBlogPost;
+            if (data.slug === slug && data.isPublished !== false) {
+              return { ...data, id: row.id };
+            }
+          } catch (e) {}
+        }
+        const defaultPost = DEFAULT_BLOG_POSTS.find(p => p.slug === slug);
+        return defaultPost || null;
       } catch (error) {
         console.error('Error fetching blog post:', error);
-        return null;
+        const defaultPost = DEFAULT_BLOG_POSTS.find(p => p.slug === slug);
+        return defaultPost || null;
       }
     },
     [`blog-post-${slug}`],
@@ -68,35 +70,29 @@ const getRelatedPosts = cache(async (currentSlug: string, categoryId?: string): 
   return unstable_cache(
     async () => {
       try {
-        const blogPostsRef = adminDb.collection('blogPosts');
-        let q = blogPostsRef.where('isPublished', '==', true);
-        
-        if (categoryId) {
-          q = q.where('categoryId', '==', categoryId);
-        }
-        
-        const snapshot = await q.limit(4).get();
-        return snapshot.docs
-          .map((doc: any) => {
-            const data = doc.data() as FirestoreBlogPost;
+        const rows = await queryDb<any[]>(
+          "SELECT id, data, createdAt FROM generic_collections WHERE collection_name = 'blogPosts'"
+        );
+        const posts: ClientBlogPost[] = rows
+          .map(row => {
+            let data: any = {};
+            try { data = JSON.parse(row.data); } catch (e) {}
             return {
               ...data,
-              id: doc.id,
-              createdAt: (() => {
-                const millis = getTimestampMillis(data.createdAt);
-                return millis ? new Date(millis).toISOString() : new Date().toISOString();
-              })(),
-              updatedAt: (() => {
-                const millis = getTimestampMillis(data.updatedAt);
-                return millis ? new Date(millis).toISOString() : undefined;
-              })(),
+              id: row.id,
+              createdAt: data.createdAt || row.createdAt ? new Date(data.createdAt || row.createdAt).toISOString() : new Date().toISOString(),
+              updatedAt: data.updatedAt ? new Date(data.updatedAt).toISOString() : undefined,
             } as ClientBlogPost;
           })
-          .filter((post: ClientBlogPost) => post.slug !== currentSlug)
-          .slice(0, 3);
+          .filter((post: ClientBlogPost) => post.isPublished === true && post.slug !== currentSlug);
+
+        if (posts.length > 0) {
+          return posts.slice(0, 3);
+        }
+        return (DEFAULT_BLOG_POSTS as ClientBlogPost[]).filter(p => p.slug !== currentSlug).slice(0, 3);
       } catch (error) {
         console.error('Error fetching related posts:', error);
-        return [];
+        return (DEFAULT_BLOG_POSTS as ClientBlogPost[]).filter(p => p.slug !== currentSlug).slice(0, 3);
       }
     },
     [`related-posts-${currentSlug}`],

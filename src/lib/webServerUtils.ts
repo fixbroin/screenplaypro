@@ -9,6 +9,8 @@ import { defaultMarketingValues } from '@/hooks/useMarketingSettings';
 import { cache } from 'react';
 import { unstable_cache } from 'next/cache';
 
+import { DEFAULT_CONTENT_PAGES } from '@/config/defaultContent';
+
 /**
  * Fetches a content page by slug from MySQL.
  */
@@ -21,12 +23,20 @@ export const getContentPageData = cache(async (slug: string): Promise<ContentPag
           [slug]
         );
         if (rows.length > 0) {
-          return JSON.parse(rows[0].data) as ContentPage;
+          const parsed = JSON.parse(rows[0].data) as ContentPage;
+          if (parsed && parsed.content && !parsed.content.includes("coming soon.")) {
+            return parsed;
+          }
+        }
+        const defaultPage = DEFAULT_CONTENT_PAGES[slug];
+        if (defaultPage) {
+          return { id: slug, ...defaultPage } as ContentPage;
         }
         return null;
       } catch (error) {
         console.error(`Error fetching content page for slug "${slug}" from MySQL:`, error);
-        return null;
+        const defaultPage = DEFAULT_CONTENT_PAGES[slug];
+        return defaultPage ? ({ id: slug, ...defaultPage } as ContentPage) : null;
       }
     },
     [`content-page-${slug}`],

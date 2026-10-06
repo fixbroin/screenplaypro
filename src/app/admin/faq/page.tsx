@@ -12,8 +12,7 @@ import FAQForm from '@/components/admin/FAQForm';
 import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { triggerRefresh } from '@/lib/revalidateUtils';
-
-
+import { DEFAULT_FAQS } from '@/config/defaultContent';
 
 export default function AdminFAQPage() {
   const [faqs, setFaqs] = useState<FirestoreFAQ[]>([]);
@@ -29,8 +28,23 @@ export default function AdminFAQPage() {
     try {
       const res = await fetch('/api/db/collections?name=adminFAQs');
       const json = await res.json();
-      if (json.success && Array.isArray(json.data)) {
+      if (json.success && Array.isArray(json.data) && json.data.length > 0) {
         setFaqs(json.data as FirestoreFAQ[]);
+      } else {
+        const seeded: FirestoreFAQ[] = [];
+        for (const faq of DEFAULT_FAQS) {
+          try {
+            await fetch('/api/db/collections', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ collectionName: 'adminFAQs', id: faq.id, data: faq })
+            });
+            seeded.push(faq);
+          } catch (e) {
+            console.error("Error seeding FAQ:", e);
+          }
+        }
+        setFaqs(seeded);
       }
     } catch (error) {
       console.error("Error fetching FAQs from MySQL: ", error);

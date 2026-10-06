@@ -13,6 +13,8 @@ import JsonLdScript from '@/components/shared/JsonLdScript';
 
 import type { BreadcrumbItem } from '@/types/ui';
 
+import { DEFAULT_BLOG_POSTS } from '@/config/defaultContent';
+
 export const revalidate = false; // Persistent Cache
 
 const getPublishedPosts = unstable_cache(
@@ -38,10 +40,13 @@ const getPublishedPosts = unstable_cache(
         .filter(post => post.isPublished === true)
         .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       
-      return posts;
+      if (posts.length > 0) {
+        return posts;
+      }
+      return DEFAULT_BLOG_POSTS as ClientBlogPost[];
     } catch (error) {
       console.error("Error fetching blog posts from MySQL:", error);
-      return [];
+      return DEFAULT_BLOG_POSTS as ClientBlogPost[];
     }
   },
   ['published-blog-posts'],

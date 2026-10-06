@@ -27,7 +27,7 @@ export async function generateMetadata(
   const appBaseUrl = getBaseUrl();
 
   const title = pageData?.metaTitle || `Contact Us | ${seoSettings.siteName || 'Screenplay Pro'}`;
-  const description = pageData?.metaDescription || "Contact Screenplay Pro for any queries, support, or feedback regarding our home services in Bangalore.";
+  const description = pageData?.metaDescription || "Get in touch with Screenplay Pro customer support for queries, feedback, or assistance with script writing tools.";
 
   return {
     title: title,
@@ -77,7 +77,7 @@ export default async function ContactUsPage() {
     "@context": "https://schema.org",
     "@type": "ContactPage",
     "name": `Contact ${webSettings.websiteName || 'Screenplay Pro'}`,
-    "description": `Contact ${webSettings.websiteName || 'Screenplay Pro'} for professional artist services. Reach us via phone, email, or visit our office.`,
+    "description": `Contact ${webSettings.websiteName || 'Screenplay Pro'} support team for screenwriting tools, account assistance, and subscriptions. Reach us via phone, email, or office.`,
     "url": `${appBaseUrl}/contact-us`,
     "mainEntity": {
       "@type": "LocalBusiness",

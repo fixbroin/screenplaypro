@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
 import { useAuth } from '@/hooks/useAuth';
 import { triggerRefresh, submitPathToGoogleIndexing } from '@/lib/revalidateUtils';
+import { DEFAULT_BLOG_POSTS } from '@/config/defaultContent';
 
 export default function AdminBlogPage() {
   const [posts, setPosts] = useState<FirestoreBlogPost[]>([]);
@@ -33,8 +34,23 @@ export default function AdminBlogPage() {
     try {
       const res = await fetch('/api/db/collections?name=blogPosts');
       const json = await res.json();
-      if (json.success && Array.isArray(json.data)) {
+      if (json.success && Array.isArray(json.data) && json.data.length > 0) {
         setPosts(json.data as FirestoreBlogPost[]);
+      } else {
+        const seeded: FirestoreBlogPost[] = [];
+        for (const post of DEFAULT_BLOG_POSTS) {
+          try {
+            await fetch('/api/db/collections', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ collectionName: 'blogPosts', id: post.id, data: post })
+            });
+            seeded.push(post);
+          } catch (e) {
+            console.error("Error seeding blog post:", e);
+          }
+        }
+        setPosts(seeded);
       }
     } catch (error) {
       console.error("Error fetching blog posts from MySQL:", error);

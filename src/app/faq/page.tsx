@@ -13,6 +13,8 @@ import JsonLdScript from '@/components/shared/JsonLdScript';
 
 export const revalidate = false;
 
+import { DEFAULT_FAQS } from '@/config/defaultContent';
+
 const getFaqs = unstable_cache(
   async () => {
     try {
@@ -28,10 +30,13 @@ const getFaqs = unstable_cache(
         })
         .filter(f => f.isActive !== false);
 
-      return faqs.sort((a, b) => (a.order || 0) - (b.order || 0));
+      if (faqs.length > 0) {
+        return faqs.sort((a, b) => (a.order || 0) - (b.order || 0));
+      }
+      return DEFAULT_FAQS;
     } catch (err) {
       console.error("Error fetching FAQs from MySQL:", err);
-      return [];
+      return DEFAULT_FAQS;
     }
   },
   ['admin-faqs'],

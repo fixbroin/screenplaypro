@@ -26,6 +26,8 @@ import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { getTimestampMillis } from '@/lib/utils';
 
+import { DEFAULT_CONTENT_PAGES } from '@/config/defaultContent';
+
 const WEB_SETTINGS_DOC_ID = "global";
 const WEB_SETTINGS_COLLECTION = "webSettings";
 const CONTENT_PAGES_COLLECTION = "contentPages";
@@ -191,11 +193,14 @@ export default function WebSettingsPage() {
       let pages: ContentPage[] = json.success && Array.isArray(json.data) ? json.data : [];
       
       for (const slug of knownPageSlugs) {
-        if (!pages.find(p => p.slug === slug)) {
-          const newPageData: Omit<ContentPage, 'id'> = {
+        const existingPageIndex = pages.findIndex(p => p.slug === slug);
+        const defaultPageDef = DEFAULT_CONTENT_PAGES[slug];
+        
+        if (existingPageIndex === -1) {
+          const newPageData: Omit<ContentPage, 'id'> = defaultPageDef || {
             slug: slug,
             title: pageDisplayNames[slug] || slug.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
-            content: `Content for ${pageDisplayNames[slug] || slug} coming soon.`,
+            content: `<p>Content for ${pageDisplayNames[slug] || slug} will be updated soon.</p>`,
             updatedAt: new Date().toISOString(),
           };
           try {
@@ -205,7 +210,21 @@ export default function WebSettingsPage() {
               body: JSON.stringify({ collectionName: 'contentPages', id: slug, data: newPageData })
             });
             pages.push({ id: slug, ...newPageData } as ContentPage);
-          } catch (e) { console.error(`Error creating placeholder for ${slug}:`, e);}
+          } catch (e) { console.error(`Error creating default page for ${slug}:`, e);}
+        } else if (pages[existingPageIndex].content?.includes("coming soon.") && defaultPageDef) {
+          const updatedPageData = {
+            ...pages[existingPageIndex],
+            ...defaultPageDef,
+            updatedAt: new Date().toISOString(),
+          };
+          try {
+            await fetch('/api/db/collections', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ collectionName: 'contentPages', id: slug, data: updatedPageData })
+            });
+            pages[existingPageIndex] = { ...updatedPageData, id: slug } as ContentPage;
+          } catch (e) { console.error(`Error updating placeholder page for ${slug}:`, e);}
         }
       }
       setContentPages(pages);
