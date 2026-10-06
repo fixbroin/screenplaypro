@@ -96,9 +96,9 @@ const nextConfig: NextConfig = {
     minimumCacheTTL: 31536000,
     formats: ["image/avif", "image/webp"],
     remotePatterns: [
-      { protocol: 'https', hostname: 'screenplaypro.in' },
-      { protocol: 'https', hostname: 'wecanfix.in' },
-      { protocol: 'https', hostname: 'ad.screenplaypro.in' },
+      { protocol: 'https', hostname: 'screenplaypro.fixbro.in' },
+      { protocol: 'https', hostname: '*.fixbro.in' },
+      { protocol: 'https', hostname: 'fixbro.in' },
       { protocol: 'https', hostname: 'firebasestorage.googleapis.com' },
       { protocol: 'https', hostname: 'maps.googleapis.com' },
       { protocol: 'https', hostname: 'placehold.co' },
