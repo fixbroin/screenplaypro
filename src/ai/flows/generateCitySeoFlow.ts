@@ -1,22 +1,21 @@
-
 'use server';
 /**
- * @fileOverview An AI flow to generate SEO content for a city page.
+ * @fileOverview An AI flow to generate SEO content for a city page for Screenplay Pro.
  */
 
 import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
 
 const GenerateCitySeoInputSchema = z.object({
-  cityName: z.string().describe("The name of the city, e.g., 'Bangalore' or 'Whitefield'."),
+  cityName: z.string().describe("The name of the city, e.g., 'Bangalore' or 'Mumbai'."),
 });
 export type GenerateCitySeoInput = z.infer<typeof GenerateCitySeoInputSchema>;
 
 const GenerateCitySeoOutputSchema = z.object({
-  h1_title: z.string().describe("An H1 title optimized for the city page. Format: 'Best Professional Home Services in {{cityName}}'"),
-  seo_title: z.string().describe("An SEO-optimized meta title, under 60 characters. Format: 'Best Home Services in {{cityName}} | Top-Rated Handyman Near Me'"),
-  seo_description: z.string().describe("An SEO-optimized meta description, under 160 characters. Should be a compelling summary that encourages clicks, mentioning key services, the city name, and words like 'trusted' and 'professional'."),
-  seo_keywords: z.string().describe("A comma-separated string of 10 relevant SEO keywords for the city. Must include variations like 'best home services {{cityName}}', 'professional home repair {{cityName}}', 'handyman near me'."),
+  h1_title: z.string().describe("An H1 title optimized for the city page. Format: 'Screenplay Writing & Film Scriptwriters in {{cityName}}'"),
+  seo_title: z.string().describe("An SEO-optimized meta title, under 60 characters. Format: 'Screenplay Writing & Scriptwriters in {{cityName}} | Screenplay Pro'"),
+  seo_description: z.string().describe("An SEO-optimized meta description, under 160 characters. Highlights studio-standard formatting, autosave, and PDF exports for film writers in the city."),
+  seo_keywords: z.string().describe("A comma-separated string of 10 relevant SEO keywords for the city. Include variations like 'screenplay writers {{cityName}}', 'script writing software {{cityName}}', 'write movie script {{cityName}}'."),
 });
 export type GenerateCitySeoOutput = z.infer<typeof GenerateCitySeoOutputSchema>;
 
@@ -28,17 +27,17 @@ const prompt = ai.definePrompt({
   name: 'generateCitySeoPrompt',
   input: { schema: GenerateCitySeoInputSchema },
   output: { schema: GenerateCitySeoOutputSchema },
-  prompt: `You are an expert Talent SEO copywriter for an artist discovery platform called "Screenplay Pro" operating in India.
-Your task is to generate highly aggressive, intent-driven SEO content for a city-level landing page to rank #1 on Google for talent-related searches in that city.
+  prompt: `You are an expert Screenplay & Film SEO copywriter for Screenplay Pro (online screenplay writing software and film scriptwriters platform operating in India).
+Your task is to generate intent-driven SEO content for a city landing page to rank #1 on Google for scriptwriting and screenplay searches in that city.
 
 City Name: {{cityName}}
 
-Based on the city name, generate the following content. Focus on high-intent keywords like "Best", "Professional", "Hire", "Connect", and "Talent".
+Based on the city name, generate the following content:
 
-1.  **h1_title**: An H1 title using the format: "Discover Best Professional Artists in {{cityName}}".
-2.  **seo_title**: A meta title (under 60 chars) with the format: "Best Artists in {{cityName}} | Hire Professional Local Talent".
-3.  **seo_description**: A meta description (under 160 chars) that is compelling and includes the city name, key categories (like actors, singers, technicians), and mentions local discovery. Use words like "verified profiles" and "connect directly" to drive engagement.
-4.  **seo_keywords**: A comma-separated string of 10 high-intent keywords. Include "best artists in {{cityName}}", "hire performers in {{cityName}}", "top talent near me {{cityName}}", and "artist directory {{cityName}}".
+1. **h1_title**: An H1 title using the format: "Screenplay Writing & Film Scriptwriters in {{cityName}}".
+2. **seo_title**: A meta title (under 60 chars) with the format: "Screenplay Writing in {{cityName}} | Screenplay Pro".
+3. **seo_description**: A meta description (under 160 chars) that is compelling and includes the city name, mentioning screenplay formatting, autosave, and PDF exports for screenwriters.
+4. **seo_keywords**: A comma-separated string of 10 high-intent keywords. Include "screenplay writers {{cityName}}", "script writing software {{cityName}}", "write movie script {{cityName}}", and "film scriptwriter {{cityName}}".
 
 Return the entire response as a single, valid JSON object that adheres to the defined output schema.
 `,

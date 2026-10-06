@@ -77,7 +77,7 @@ const getRelatedPosts = cache(async (currentSlug: string, categoryId?: string): 
         
         const snapshot = await q.limit(4).get();
         return snapshot.docs
-          .map(doc => {
+          .map((doc: any) => {
             const data = doc.data() as FirestoreBlogPost;
             return {
               ...data,
@@ -92,7 +92,7 @@ const getRelatedPosts = cache(async (currentSlug: string, categoryId?: string): 
               })(),
             } as ClientBlogPost;
           })
-          .filter(post => post.slug !== currentSlug)
+          .filter((post: ClientBlogPost) => post.slug !== currentSlug)
           .slice(0, 3);
       } catch (error) {
         console.error('Error fetching related posts:', error);

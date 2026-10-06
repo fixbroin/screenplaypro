@@ -61,8 +61,8 @@ export async function generateMetadata(
     const seoSettings = seoSettingsDoc.exists ? serializeFirestoreData<FirestoreSEOSettings>(seoSettingsDoc.data()) : {};
     const appBaseUrl = getBaseUrl();
 
-    const title = area.seo_title || area.metaTitle || (seoSettings.areaPageTitlePattern?.replace(/{{areaName}}/g, area.name).replace(/{{cityName}}/g, city.name)) || `${area.name}, ${city.name} Artists | Screenplay Pro`;
-    const description = area.seo_description || area.metaDescription || (seoSettings.areaPageDescriptionPattern?.replace(/{{areaName}}/g, area.name).replace(/{{cityName}}/g, city.name)) || `Connect with professional artists in ${area.name}, ${city.name}.`;
+    const title = area.seo_title || area.metaTitle || (seoSettings.areaPageTitlePattern?.replace(/{{areaName}}/g, area.name).replace(/{{cityName}}/g, city.name)) || `Screenplay Writing in ${area.name}, ${city.name} | Screenplay Pro`;
+    const description = area.seo_description || area.metaDescription || (seoSettings.areaPageDescriptionPattern?.replace(/{{areaName}}/g, area.name).replace(/{{cityName}}/g, city.name)) || `Write film scripts and screenplays in ${area.name}, ${city.name} with Screenplay Pro.`;
     const keywords = (area.seo_keywords || area.metaKeywords || (seoSettings.areaPageKeywordsPattern?.replace(/{{areaName}}/g, area.name).replace(/{{cityName}}/g, city.name)) || "").split(',').map(k => k.trim()).filter(k => k);
 
     return {
@@ -94,7 +94,7 @@ export default async function AreaHomepage({ params }: { params: Promise<{ cityS
         getAggregateRating()
     ]);
 
-    const h1 = area.h1_title || (homepageData.seoSettings.areaPageH1Pattern?.replace(/{{areaName}}/g, area.name).replace(/{{cityName}}/g, city.name)) || `Top Artists in ${area.name}, ${city.name}`;
+    const h1 = area.h1_title || (homepageData.seoSettings.areaPageH1Pattern?.replace(/{{areaName}}/g, area.name).replace(/{{cityName}}/g, city.name)) || `Screenplay Writing in ${area.name}, ${city.name}`;
 
     const breadcrumbItems = [
         { label: 'Home', href: '/' },

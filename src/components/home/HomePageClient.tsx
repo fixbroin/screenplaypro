@@ -299,14 +299,14 @@ export default function HomePageClient({ citySlug, areaSlug, breadcrumbItems, in
               />
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
                 {featuresList.map((feature, idx) => (
-                  <Card key={idx} className="border border-border/60 hover:border-primary/50 transition-all duration-300 shadow-sm hover:shadow-md">
-                    <CardHeader>
-                      <div className="p-3 w-fit rounded-2xl bg-primary/5 mb-3">
+                  <Card key={idx} className="border border-border/60 hover:border-primary/50 transition-all duration-300 shadow-sm hover:shadow-md text-center">
+                    <CardHeader className="flex flex-col items-center text-center">
+                      <div className="p-3 w-fit rounded-2xl bg-primary/5 mb-3 mx-auto flex items-center justify-center">
                         {feature.icon}
                       </div>
                       <CardTitle className="text-lg font-bold">{feature.title}</CardTitle>
                     </CardHeader>
-                    <CardContent>
+                    <CardContent className="text-center">
                       <CardDescription className="text-sm text-muted-foreground leading-relaxed">
                         {feature.description}
                       </CardDescription>

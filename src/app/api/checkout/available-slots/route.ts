@@ -258,10 +258,10 @@ export async function POST(req: NextRequest) {
         ]);
 
         const appConfig = (appConfigSnap.exists ? appConfigSnap.data() : defaultAppSettings) as AppSettings;
-        const limitsData = Object.fromEntries(limitsSnap.docs.map(doc => [doc.data().categoryId, { id: doc.id, ...doc.data() } as TimeSlotCategoryLimit]));
-        const servicesData = Object.fromEntries(servicesSnap.docs.map(doc => [doc.id, { id: doc.id, ...doc.data() } as FirestoreService]));
-        const subCatsData = Object.fromEntries(subCatsSnap.docs.map(doc => [doc.id, { id: doc.id, ...doc.data() } as FirestoreSubCategory]));
-        const existingBookings = bookingsSnap.docs.map(doc => doc.data() as FirestoreBooking);
+        const limitsData = Object.fromEntries(limitsSnap.docs.map((doc: any) => [doc.data().categoryId, { id: doc.id, ...doc.data() } as TimeSlotCategoryLimit]));
+        const servicesData = Object.fromEntries(servicesSnap.docs.map((doc: any) => [doc.id, { id: doc.id, ...doc.data() } as FirestoreService]));
+        const subCatsData = Object.fromEntries(subCatsSnap.docs.map((doc: any) => [doc.id, { id: doc.id, ...doc.data() } as FirestoreSubCategory]));
+        const existingBookings = bookingsSnap.docs.map((doc: any) => doc.data() as FirestoreBooking);
 
         const slotInterval = appConfig.timeSlotSettings?.slotIntervalMinutes || DEFAULT_SLOT_INTERVAL_MINUTES;
         const breakTimeMinutes = appConfig.timeSlotSettings?.breakTimeMinutes || 0;
@@ -284,7 +284,7 @@ export async function POST(req: NextRequest) {
         // --- Cache Logic Start ---
         // Generate a composite hash to invalidate cache if any relevant data changes
         const bookingsHash = bookingsSnap.docs
-            .map(doc => `${doc.id}_${doc.updateTime?.toMillis() || 0}`)
+            .map((doc: any) => `${doc.id}_${doc.updateTime?.toMillis() || 0}`)
             .sort()
             .join('|');
             
@@ -303,11 +303,11 @@ export async function POST(req: NextRequest) {
             // Cache Miss: Run Simulation
             globalBusyMap = new Map<string, Record<string, number>>();
 
-            existingBookings.forEach(booking => {
+            existingBookings.forEach((booking: any) => {
                 let bookingWorkDuration = 0;
                 const bookingCategoryIds = new Set<string>();
 
-                booking.services.forEach(item => {
+                booking.services.forEach((item: any) => {
                     const serviceDetail = servicesData[item.serviceId];
                     if (serviceDetail) {
                         bookingWorkDuration += getServiceDurationInMinutes(serviceDetail) * item.quantity;

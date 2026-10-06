@@ -32,6 +32,8 @@ export { ADMIN_EMAIL };
 export interface SignUpData {
   email: string;
   password: string;
+  fullName?: string;
+  mobileNumber?: string;
 }
 
 export interface LogInData {
@@ -349,6 +351,29 @@ export const AuthProvider: React.FC<PropsWithChildren> = ({ children }) => {
     setIsLoading(true);
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
+      const { user } = userCredential;
+
+      if (data.fullName) {
+        await updateProfile(user, { displayName: data.fullName });
+      }
+
+      const formattedMobile = data.mobileNumber
+        ? (data.mobileNumber.startsWith('+') ? data.mobileNumber : `${appConfig.defaultOtpCountryCode || '+91'}${data.mobileNumber.replace(/\D/g, '')}`)
+        : '';
+
+      const newUserData = {
+        id: user.uid,
+        email: data.email,
+        displayName: data.fullName || 'User',
+        mobileNumber: formattedMobile,
+        photoURL: user.photoURL || '',
+        isActive: 1,
+        roles: ['user']
+      };
+
+      await saveMySQLUser(newUserData);
+      setFirestoreUser(newUserData as unknown as FirestoreUser);
+
       await handleSuccessfulAuth(userCredential);
     } catch (error) {
       const authError = error as AuthError;
@@ -357,7 +382,7 @@ export const AuthProvider: React.FC<PropsWithChildren> = ({ children }) => {
       setIsLoading(false);
       throw authError;
     }
-  }, [toast, handleSuccessfulAuth]);
+  }, [toast, handleSuccessfulAuth, saveMySQLUser, appConfig]);
 
   const logIn = useCallback(async (data: LogInData) => {
     if (!data.password) {

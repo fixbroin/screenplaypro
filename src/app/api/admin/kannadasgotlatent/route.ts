@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
       .orderBy('createdAt', 'desc')
       .get();
       
-    const applications = snapshot.docs.map(doc => {
+    const applications = snapshot.docs.map((doc: any) => {
       const data = doc.data();
       return {
         id: doc.id,

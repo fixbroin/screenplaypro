@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import Logo from '@/components/shared/Logo';
-import { Mail, KeyRound, Loader2, User } from 'lucide-react';
+import { Mail, KeyRound, Loader2, User, Phone } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import type { SignUpData } from '@/contexts/AuthContext';
 import { useEffect } from 'react';
@@ -21,7 +21,9 @@ import { useApplicationConfig } from '@/hooks/useApplicationConfig';
 import { useGlobalSettings } from '@/hooks/useGlobalSettings';
 
 const signUpSchema = z.object({
+  fullName: z.string().min(2, { message: "Full name must be at least 2 characters." }),
   email: z.string().email({ message: "Invalid email address." }),
+  mobileNumber: z.string().regex(/^\d{10}$/, { message: "Please enter a valid 10-digit mobile number." }),
   password: z.string().min(6, { message: "Password must be at least 6 characters." }),
   confirmPassword: z.string(),
 }).refine(data => data.password === data.confirmPassword, {
@@ -48,7 +50,9 @@ export default function SignupPage() {
   const form = useForm<SignUpFormValues>({
     resolver: zodResolver(signUpSchema),
     defaultValues: {
+      fullName: "",
       email: "",
+      mobileNumber: "",
       password: "",
       confirmPassword: "",
     },
@@ -127,9 +131,58 @@ export default function SignupPage() {
             {config.enableEmailPasswordLogin ? (
               <Form {...form}>
                 <form onSubmit={form.handleSubmit(onEmailSubmit)} className="space-y-4">
-                  <FormField control={form.control} name="email" render={({ field }) => (<FormItem><FormLabel htmlFor="email"><Mail className="inline mr-2 h-4 w-4 text-muted-foreground" />Email</FormLabel><FormControl><Input id="email" type="email" placeholder="you@example.com" {...field} /></FormControl><FormMessage /></FormItem>)}/>
-                  <FormField control={form.control} name="password" render={({ field }) => (<FormItem><FormLabel htmlFor="password"><KeyRound className="inline mr-2 h-4 w-4 text-muted-foreground" />Password</FormLabel><FormControl><Input id="password" type="password" placeholder="Choose a strong password" {...field} /></FormControl><FormMessage /></FormItem>)}/>
-                  <FormField control={form.control} name="confirmPassword" render={({ field }) => (<FormItem><FormLabel htmlFor="confirmPassword"><KeyRound className="inline mr-2 h-4 w-4 text-muted-foreground" />Confirm Password</FormLabel><FormControl><Input id="confirmPassword" type="password" placeholder="Re-enter your password" {...field} /></FormControl><FormMessage /></FormItem>)}/>
+                  <FormField control={form.control} name="fullName" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel htmlFor="fullName"><User className="inline mr-2 h-4 w-4 text-muted-foreground" />Full Name</FormLabel>
+                      <FormControl><Input id="fullName" placeholder="Your full name" {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}/>
+                  <FormField control={form.control} name="email" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel htmlFor="email"><Mail className="inline mr-2 h-4 w-4 text-muted-foreground" />Email Address</FormLabel>
+                      <FormControl><Input id="email" type="email" placeholder="you@example.com" {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}/>
+                  <FormField control={form.control} name="mobileNumber" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel htmlFor="mobileNumber"><Phone className="inline mr-2 h-4 w-4 text-muted-foreground" />Mobile Number</FormLabel>
+                      <div className="flex items-center">
+                        <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-input bg-muted text-muted-foreground h-10 text-sm">
+                          {config.defaultOtpCountryCode || '+91'}
+                        </span>
+                        <FormControl>
+                          <Input
+                            id="mobileNumber"
+                            type="tel"
+                            placeholder="10-digit number"
+                            className="rounded-l-none"
+                            {...field}
+                            onChange={(e) => {
+                              const cleaned = e.target.value.replace(/\D/g, '').slice(0, 10);
+                              field.onChange(cleaned);
+                            }}
+                          />
+                        </FormControl>
+                      </div>
+                      <FormMessage />
+                    </FormItem>
+                  )}/>
+                  <FormField control={form.control} name="password" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel htmlFor="password"><KeyRound className="inline mr-2 h-4 w-4 text-muted-foreground" />Password</FormLabel>
+                      <FormControl><Input id="password" type="password" placeholder="Choose a strong password" {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}/>
+                  <FormField control={form.control} name="confirmPassword" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel htmlFor="confirmPassword"><KeyRound className="inline mr-2 h-4 w-4 text-muted-foreground" />Confirm Password</FormLabel>
+                      <FormControl><Input id="confirmPassword" type="password" placeholder="Re-enter your password" {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}/>
                   <Button type="submit" className="w-full" size="lg" disabled={authContextIsLoading}>
                     {authContextIsLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     Sign Up with Email

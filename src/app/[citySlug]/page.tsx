@@ -77,7 +77,7 @@ export default async function CityLandingPage({ params }: { params: Promise<{ ci
         getAggregateRating()
     ]);
 
-    const cityH1 = city.h1_title || `${city.name} Screenplay Writing Services`;
+    const cityH1 = city.h1_title || `Screenplay Writing & Scriptwriters in ${city.name}`;
 
     return (
         <>

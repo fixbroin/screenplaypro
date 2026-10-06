@@ -8,11 +8,11 @@ export const revalidate = false; // Cache permanently on the server side
 
 export async function generateMetadata(): Promise<Metadata> {
   const appBaseUrl = getBaseUrl();
-  const title = "Free Screenplay Writer & Script Writing Software Online | Screenplay Pro";
-  const description = "Start writing your movie script, film screenplay, or theater play online for free. Screenplay Pro is India's No. 1 free script writing tool for screenplay writers.";
+  const title = "Screenplay Writer & Script Writing Software Online | Screenplay Pro";
+  const description = "Start writing your movie script, film screenplay, or theater play online. Screenplay Pro is India's premier screenplay writing tool for professional scriptwriters.";
   const keywords = [
-    "screenplay writer", "free script writing software", "write movie script online",
-    "script format", "screenwriting tool", "free screenplay editor", "write script for free",
+    "screenplay writer", "script writing software", "write movie script online",
+    "script format", "screenwriting tool", "screenplay editor", "write script online",
     "scriptwriting software india", "bangalore screenplay writers"
   ];
 
@@ -45,10 +45,10 @@ export default function Page() {
     "mainEntity": [
       {
         "@type": "Question",
-        "name": "Is the Screenplay Pro script writing software really free?",
+        "name": "What features are included in Screenplay Pro script writing software?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "Yes, it is 100% free with no monthly subscriptions, page limits, or hidden fees. We want screenplay writers to write freely without financial barriers."
+          "text": "Screenplay Pro provides studio-standard screenplay formatting, real-time cloud autosaving, multi-language typing support, and high-quality PDF script exports."
         }
       },
       {
@@ -76,15 +76,10 @@ export default function Page() {
     "name": "Screenplay Pro Screenplay Editor",
     "url": `${appBaseUrl}/script-writing`,
     "image": `${appBaseUrl}/android-chrome-512x512.png`,
-    "description": "Free online script writing software and screenplay editor in industry standard formatting.",
+    "description": "Online script writing software and screenplay editor in industry standard formatting.",
     "applicationCategory": "MultimediaApplication",
     "operatingSystem": "All",
     "browserRequirements": "Requires HTML5 support",
-    "offers": {
-      "@type": "Offer",
-      "price": "0.00",
-      "priceCurrency": "INR"
-    }
   };
 
   return (

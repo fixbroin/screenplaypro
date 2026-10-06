@@ -34,7 +34,7 @@ export async function getIndexingStats(): Promise<IndexingStats> {
       .get();
 
     const indexedUrls = new Set<string>();
-    logsSnapshot.forEach(doc => {
+    logsSnapshot.forEach((doc: any) => {
       indexedUrls.add(doc.data().url);
     });
 
@@ -52,7 +52,7 @@ export async function getIndexingStats(): Promise<IndexingStats> {
       .limit(20)
       .get();
 
-    const recentSubmissions = recentSnapshot.docs.map(doc => {
+    const recentSubmissions = recentSnapshot.docs.map((doc: any) => {
       const data = doc.data();
       let dateString = 'N/A';
       if (data.processedDate) {
@@ -115,7 +115,7 @@ export async function runManualBatch(): Promise<{ success: boolean; message: str
       .get();
 
     const indexedUrls = new Set<string>();
-    logsSnapshot.forEach(doc => {
+    logsSnapshot.forEach((doc: any) => {
       indexedUrls.add(doc.data().url);
     });
 

@@ -181,23 +181,23 @@ export default function ScriptWritingDashboardClient() {
         {/* Hero Section */}
         <section className="text-center space-y-6 py-12 md:py-20">
           <div className="inline-flex items-center gap-2 px-4 py-2 bg-primary/5 rounded-full text-xs font-black uppercase tracking-widest text-primary border border-primary/10">
-            <PenTool className="w-4 h-4 text-primary" /> 100% Free Screenplay Software
+            <PenTool className="w-4 h-4 text-primary" /> Industry-Standard Screenplay Software
           </div>
           <h1 className="text-4xl md:text-7xl font-black tracking-tight leading-tight max-w-4xl mx-auto">
-            Free Online Script Writing Software & Screenplay Writer
+            Online Script Writing Software & Screenplay Writer
           </h1>
           <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-            Write your film script, theater screenplay, movie plot, or short film script online in industry-standard format. Completely free, no subscriptions required.
+            Write your film script, theater screenplay, movie plot, or short film script online in industry-standard format with real-time autosave and instant PDF exports.
           </p>
           <div className="pt-6 flex flex-col sm:flex-row justify-center gap-4">
             <Link href="/auth/login?redirect=/script-writing">
               <Button size="lg" className="rounded-full px-8 py-6 text-md font-bold shadow-lg shadow-primary/20 h-14">
-                Start Writing Now (Free)
+                Start Writing Now
               </Button>
             </Link>
-            <Link href="/">
+            <Link href="/subscriptions">
               <Button size="lg" variant="outline" className="rounded-full px-8 py-6 text-md font-bold h-14">
-                Explore Casting Calls
+                View Pricing & Plans
               </Button>
             </Link>
           </div>
@@ -207,8 +207,8 @@ export default function ScriptWritingDashboardClient() {
         <section className="py-16 border-t">
           <h2 className="text-2xl md:text-4xl font-black text-center mb-12">Professional Screenplay Writing Tools</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div className="p-8 bg-card border rounded-3xl space-y-4 shadow-sm hover:shadow-md transition-shadow">
-              <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center">
+            <div className="p-8 bg-card border rounded-3xl space-y-4 shadow-sm hover:shadow-md transition-shadow text-center flex flex-col items-center">
+              <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center mx-auto">
                 <Sparkles className="w-6 h-6 text-primary" />
               </div>
               <h3 className="text-xl font-bold">Standard Screenplay Format</h3>
@@ -216,22 +216,22 @@ export default function ScriptWritingDashboardClient() {
                 Automatically formats Scene Headings, Action, Characters, Parentheticals, Dialogues, and Transitions. Type with professional tab-and-enter shortcuts.
               </p>
             </div>
-            <div className="p-8 bg-card border rounded-3xl space-y-4 shadow-sm hover:shadow-md transition-shadow">
-              <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center">
+            <div className="p-8 bg-card border rounded-3xl space-y-4 shadow-sm hover:shadow-md transition-shadow text-center flex flex-col items-center">
+              <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center mx-auto">
                 <Printer className="w-6 h-6 text-primary" />
               </div>
               <h3 className="text-xl font-bold">Perfect PDF Export</h3>
               <p className="text-muted-foreground text-sm leading-relaxed">
-                Export your screenplays to perfectly formatted PDF files at any time with a single click. Ready for printing, casting calls, and pitching to producers.
+                Export your screenplays to perfectly formatted PDF files at any time with a single click. Ready for printing, pitching to producers, and director reviews.
               </p>
             </div>
-            <div className="p-8 bg-card border rounded-3xl space-y-4 shadow-sm hover:shadow-md transition-shadow">
-              <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center">
+            <div className="p-8 bg-card border rounded-3xl space-y-4 shadow-sm hover:shadow-md transition-shadow text-center flex flex-col items-center">
+              <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center mx-auto">
                 <BookOpen className="w-6 h-6 text-primary" />
               </div>
-              <h3 className="text-xl font-bold">Free Forever (No Paywalls)</h3>
+              <h3 className="text-xl font-bold">Pro Screenwriting Suite</h3>
               <p className="text-muted-foreground text-sm leading-relaxed">
-                We believe in supporting creative scriptwriters. There are no page limits, subscription fees, or hidden charges. Write as many scripts as you want.
+                Write and manage your film screenplays with real-time cloud autosave, multi-language typing support, and studio-grade PDF exports.
               </p>
             </div>
           </div>
@@ -245,7 +245,7 @@ export default function ScriptWritingDashboardClient() {
               Writing a movie script requires adhering to the industry-standard screenplay layout. Standard formatting ensures that one page of screenplay translates roughly to one minute of screen time.
             </p>
             <p>
-              Screenplay Pro's free screenplay editor makes scriptwriting simple. It supports all critical screenwriting elements:
+              Screenplay Pro's screenplay editor makes scriptwriting simple. It supports all critical screenwriting elements:
             </p>
             <ul className="list-disc pl-6 space-y-2 text-sm">
               <li><strong>Scene Headings (Sluglines)</strong>: e.g., EXT. COFFEE SHOP - DAY. Identifies the location and time.</li>
@@ -255,7 +255,7 @@ export default function ScriptWritingDashboardClient() {
               <li><strong>Dialogues</strong>: The actual spoken lines, formatted in the center column.</li>
             </ul>
             <p>
-              Simply create a free account, type your title, and start putting your film vision into words. You can easily share your portfolios with actors, assistant directors, and casting agencies on our local Bangalore film casting directory.
+              Simply create an account, type your title, and start putting your film vision into words. You can easily write, format, and manage your scripts anywhere on any device.
             </p>
           </div>
         </section>
@@ -265,9 +265,9 @@ export default function ScriptWritingDashboardClient() {
           <h2 className="text-2xl md:text-4xl font-black text-center mb-10">Frequently Asked Questions</h2>
           <Accordion type="single" collapsible className="w-full">
             <AccordionItem value="faq-1" className="border-primary/10">
-              <AccordionTrigger className="font-bold text-left">Is the script writing software really free?</AccordionTrigger>
+              <AccordionTrigger className="font-bold text-left">What features are included in Screenplay Pro?</AccordionTrigger>
               <AccordionContent className="text-muted-foreground leading-relaxed">
-                Yes, it is 100% free with no monthly subscriptions, page limits, or hidden fees. We want screenplay writers to write freely without financial barriers.
+                Screenplay Pro includes studio-standard screenplay formatting, auto-saving script editor, multi-language typing, and high-quality PDF script exports.
               </AccordionContent>
             </AccordionItem>
             <AccordionItem value="faq-2" className="border-primary/10">
