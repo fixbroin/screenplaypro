@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryDb } from '@/lib/mysql';
+import { getBaseUrl } from '@/lib/config';
 
 async function getPayPalAccessToken(clientId: string, clientSecret: string, isSandbox: boolean) {
   const cleanId = clientId.trim();
@@ -66,6 +67,10 @@ export async function POST(req: NextRequest) {
     const formattedAmount = amount.toFixed(2);
     const customId = userId && planId ? `${userId}:${planId}` : (userId || planId || undefined);
 
+    const origin = getBaseUrl().replace(/\/$/, '');
+    const returnUrl = `${origin}/checkout/payment?planId=${encodeURIComponent(planId || 'plan_monthly')}&paymentMethod=paypal`;
+    const cancelUrl = `${origin}/subscriptions?cancelled=true`;
+
     const orderRes = await fetch(`${baseUrl}/v2/checkout/orders`, {
       method: 'POST',
       headers: {
@@ -84,6 +89,13 @@ export async function POST(req: NextRequest) {
             },
           },
         ],
+        application_context: {
+          brand_name: "Screenplay Pro",
+          landing_page: "LOGIN",
+          user_action: "PAY_NOW",
+          return_url: returnUrl,
+          cancel_url: cancelUrl,
+        },
       }),
     });
 
