@@ -47,21 +47,38 @@ export async function POST(req: NextRequest) {
             [subscriptionId, JSON.stringify(subscriptionData)]
           );
 
-          const userRows = await queryDb<any[]>(
-            "SELECT data FROM generic_collections WHERE collection_name = 'users' AND id = ?",
-            [userId]
-          );
+          // 1. Update Firestore
+          try {
+            const { adminDb } = await import('@/lib/firebaseAdmin');
+            const { Timestamp } = await import('firebase-admin/firestore');
+            const userRef = adminDb.collection('users').doc(userId);
+            await userRef.set({
+              subscriptionActive: true,
+              currentSubscriptionId: planId,
+              subscriptionPlanName: planId === 'plan_annual' ? 'Annual Pro Pass' : (planId === 'plan_lifetime' ? 'Lifetime Writer Pass' : 'Monthly Writer Pass'),
+              subscriptionExpiresAt: Timestamp.fromDate(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)),
+              lastSubscriptionAt: Timestamp.fromDate(new Date()),
+              updatedAt: Timestamp.fromDate(new Date())
+            }, { merge: true });
+          } catch (fsErr) {
+            console.warn("PayPal Webhook Firestore sync warning:", fsErr);
+          }
 
-          if (userRows.length > 0) {
-            const userData = JSON.parse(userRows[0].data || '{}');
-            userData.subscriptionActive = true;
-            userData.currentSubscriptionId = subscriptionId;
-            userData.subscriptionExpiresAt = expiresAt;
-
+          // 2. Update MySQL users table
+          try {
             await queryDb(
-              "UPDATE generic_collections SET data = ? WHERE collection_name = 'users' AND id = ?",
-              [JSON.stringify(userData), userId]
+              `UPDATE users SET 
+                 subscriptionActive = 1,
+                 currentSubscriptionId = ?,
+                 subscriptionPlanName = ?,
+                 subscriptionExpiresAt = ?,
+                 lastSubscriptionAt = NOW(),
+                 updatedAt = NOW()
+               WHERE id = ?`,
+              [planId, planId === 'plan_annual' ? 'Annual Pro Pass' : (planId === 'plan_lifetime' ? 'Lifetime Writer Pass' : 'Monthly Writer Pass'), new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), userId]
             );
+          } catch (myErr) {
+            console.warn("PayPal Webhook MySQL sync warning:", myErr);
           }
 
           console.log(`PayPal Webhook: Activated subscription for user ${userId}`);
