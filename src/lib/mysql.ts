@@ -202,7 +202,7 @@ export async function initDb() {
       connection.release();
     }
   } catch (error: any) {
-    if (process.env.NEXT_PHASE === 'phase-production-build' || process.env.VERCEL) {
+    if (process.env.NEXT_PHASE === 'phase-production-build') {
       console.warn("MySQL database initialization skipped during build phase.");
     } else {
       console.error("Error initializing MySQL tables:", error?.message || error);
@@ -216,7 +216,7 @@ export async function queryDb<T = any>(sql: string, params: any[] = []): Promise
     const [rows] = await pool.execute(sql, params);
     return rows as T;
   } catch (error: any) {
-    if (process.env.NEXT_PHASE === 'phase-production-build' || process.env.VERCEL) {
+    if (process.env.NEXT_PHASE === 'phase-production-build') {
       console.warn(`[Build MySQL notice]: Query skipped for SSG static build (${error?.message || 'ETIMEDOUT'})`);
     } else {
       console.error("Error in queryDb:", error?.message || error);

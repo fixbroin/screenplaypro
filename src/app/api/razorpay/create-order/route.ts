@@ -1,33 +1,31 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import Razorpay from 'razorpay';
 import { nanoid } from 'nanoid';
-import { adminDb } from '@/lib/firebaseAdmin';
+import { queryDb } from '@/lib/mysql';
 
 export async function POST(req: NextRequest) {
   try {
-    const { amount, currency = 'INR' } = await req.json();
+    const { amount, currency = 'INR', userId, planId } = await req.json();
 
     if (!amount || typeof amount !== 'number' || amount < 100) {
       return NextResponse.json({ success: false, error: 'Invalid amount provided.' }, { status: 400 });
     }
 
-    // Read keys from Firestore Admin Settings first, with .env fallback
+    // Read keys from MySQL app_settings first, with .env fallback
     let razorpayKeyId = process.env.RAZORPAY_KEY_ID || process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || '';
     let razorpayKeySecret = process.env.RAZORPAY_KEY_SECRET || '';
 
     try {
-      const docSnap = await adminDb.collection('webSettings').doc('applicationConfig').get();
-      if (docSnap.exists) {
-        const data = docSnap.data();
-        if (data?.razorpayKeyId?.trim()) {
-          razorpayKeyId = data.razorpayKeyId.trim();
-        }
-        if (data?.razorpayKeySecret?.trim()) {
-          razorpayKeySecret = data.razorpayKeySecret.trim();
-        }
+      const rows = await queryDb<any[]>(
+        "SELECT setting_value FROM app_settings WHERE setting_key = 'applicationConfig'"
+      );
+      if (rows.length > 0) {
+        const settings = JSON.parse(rows[0].setting_value || '{}');
+        if (settings.razorpayKeyId?.trim()) razorpayKeyId = settings.razorpayKeyId.trim();
+        if (settings.razorpayKeySecret?.trim()) razorpayKeySecret = settings.razorpayKeySecret.trim();
       }
     } catch (dbErr) {
-      console.warn("Could not load payment settings from Firestore, using .env fallback:", dbErr);
+      console.warn("Could not load payment settings from MySQL, using .env fallback:", dbErr);
     }
 
     if (!razorpayKeyId || !razorpayKeySecret) {
@@ -44,6 +42,10 @@ export async function POST(req: NextRequest) {
       amount: amount,
       currency: currency,
       receipt: `receipt_${nanoid()}`,
+      notes: {
+        userId: userId || '',
+        planId: planId || 'plan_monthly',
+      }
     };
 
     const order = await instance.orders.create(options);

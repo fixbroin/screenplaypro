@@ -5,7 +5,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Sparkles, Check, ShieldCheck, Zap, Loader2, FileText, Languages, Download, Cloud, AlertCircle, Calendar } from 'lucide-react';
+import { Sparkles, Check, ShieldCheck, Zap, Loader2, FileText, Languages, Download, Cloud, AlertCircle, Calendar, CreditCard, DollarSign, Lock } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Breadcrumbs from '@/components/shared/Breadcrumbs';
 import { useToast } from '@/hooks/use-toast';
@@ -72,6 +73,12 @@ export default function SubscriptionsPage() {
   const [isLoadingPlans, setIsLoadingPlans] = useState(true);
   const [isPurchasing, setIsPurchasing] = useState<string | null>(null);
 
+  // Payment Gateways Config State
+  const [isRazorpayEnabled, setIsRazorpayEnabled] = useState(true);
+  const [isPaypalEnabled, setIsPaypalEnabled] = useState(false);
+  const [selectedPlanForModal, setSelectedPlanForModal] = useState<SubscriptionPlan | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
   const isPdfExportReason = searchParams.get('reason') === 'pdf_export';
 
   useEffect(() => {
@@ -91,9 +98,25 @@ export default function SubscriptionsPage() {
         setPlans(DEFAULT_SCREENPLAY_PLANS);
       })
       .finally(() => setIsLoadingPlans(false));
+
+    // Load App Payment Settings to check enabled gateways
+    fetch('/api/db/settings?key=applicationConfig')
+      .then(res => res.json())
+      .then(json => {
+        if (json.success && json.data) {
+          setIsRazorpayEnabled(json.data.enableOnlinePayment ?? true);
+          setIsPaypalEnabled(json.data.enablePaypal ?? false);
+        }
+      })
+      .catch(e => console.error("Error fetching payment settings:", e));
   }, []);
 
   const subscriptionInfo = checkSubscriptionStatus(firestoreUser);
+
+  const proceedToCheckout = (plan: SubscriptionPlan, method: 'razorpay' | 'paypal') => {
+    setIsModalOpen(false);
+    router.push(`/checkout/payment?planId=${plan.id}&planName=${encodeURIComponent(plan.name)}&amount=${plan.price}&days=${plan.durationDays}&paymentMethod=${method}`);
+  };
 
   const handleSelectPlan = async (plan: SubscriptionPlan) => {
     if (!user) {
@@ -106,18 +129,16 @@ export default function SubscriptionsPage() {
       return;
     }
 
-    setIsPurchasing(plan.id);
-    try {
-      router.push(`/checkout/payment?planId=${plan.id}&planName=${encodeURIComponent(plan.name)}&amount=${plan.price}&days=${plan.durationDays}`);
-    } catch (error: any) {
-      toast({
-        title: "Checkout Error",
-        description: error.message || "Failed to proceed to payment.",
-        variant: "destructive"
-      });
-    } finally {
-      setIsPurchasing(null);
+    // If BOTH Razorpay and PayPal are enabled, show Pop-up modal!
+    if (isRazorpayEnabled && isPaypalEnabled) {
+      setSelectedPlanForModal(plan);
+      setIsModalOpen(true);
+      return;
     }
+
+    // Otherwise proceed with the only enabled payment gateway
+    const activeMethod = isPaypalEnabled ? 'paypal' : 'razorpay';
+    proceedToCheckout(plan, activeMethod);
   };
 
   return (
@@ -264,6 +285,58 @@ export default function SubscriptionsPage() {
           <p className="text-xs text-muted-foreground">Never lose a single word with real-time MySQL cloud saving.</p>
         </div>
       </div>
+
+      {/* POP-UP MODAL FOR PAYMENT GATEWAY CHOICE */}
+      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+        <DialogContent className="sm:max-w-md rounded-2xl p-6">
+          <DialogHeader className="text-center pb-2">
+            <DialogTitle className="text-2xl font-black">Choose Payment Method</DialogTitle>
+            <DialogDescription>
+              Select your preferred payment gateway to upgrade to <span className="font-bold text-foreground">{selectedPlanForModal?.name}</span> for ₹{selectedPlanForModal?.price}.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-1 gap-3">
+              {/* RAZORPAY BUTTON */}
+              <button
+                type="button"
+                onClick={() => selectedPlanForModal && proceedToCheckout(selectedPlanForModal, 'razorpay')}
+                className="w-full p-4 rounded-xl border border-primary/30 bg-primary/5 hover:bg-primary/10 flex items-center justify-between group transition-all text-left"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-bold">
+                    <CreditCard className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-sm text-foreground">Razorpay Payment Gateway</h4>
+                    <p className="text-xs text-muted-foreground">UPI, Credit/Debit Cards, NetBanking, Wallets</p>
+                  </div>
+                </div>
+                <Badge className="bg-emerald-500 text-white font-bold text-[10px]">INR ₹</Badge>
+              </button>
+
+              {/* PAYPAL BUTTON */}
+              <button
+                type="button"
+                onClick={() => selectedPlanForModal && proceedToCheckout(selectedPlanForModal, 'paypal')}
+                className="w-full p-4 rounded-xl border border-blue-500/30 bg-blue-500/5 hover:bg-blue-500/10 flex items-center justify-between group transition-all text-left"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold">
+                    <DollarSign className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-sm text-blue-600 dark:text-blue-400">PayPal International</h4>
+                    <p className="text-xs text-muted-foreground">International Cards & PayPal Balance</p>
+                  </div>
+                </div>
+                <Badge className="bg-blue-600 text-white font-bold text-[10px]">USD $</Badge>
+              </button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

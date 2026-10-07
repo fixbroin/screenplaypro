@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Settings, Save, Loader2, MailIcon, PlaySquare, DollarSign, CreditCard, Users } from "lucide-react";
+import { Settings, Save, Loader2, MailIcon, PlaySquare, DollarSign, CreditCard, Users, Copy, Check, Globe, ShieldCheck } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from '@/hooks/use-toast';
 import { triggerRefresh } from '@/lib/revalidateUtils';
 import type { AppSettings } from '@/types/firestore'; 
@@ -14,11 +15,35 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TooltipProvider } from '@/components/ui/tooltip';
 
+import { getBaseUrl } from '@/lib/config';
+
 export default function AdminSettingsPage() {
   const { toast } = useToast();
   const [settings, setSettings] = useState<AppSettings>(defaultAppSettings);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
+  const [originUrl, setOriginUrl] = useState('');
+  const [copiedRazorpay, setCopiedRazorpay] = useState(false);
+  const [copiedPaypal, setCopiedPaypal] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setOriginUrl(window.location.origin);
+    }
+  }, []);
+
+  const handleCopyUrl = (url: string, type: 'razorpay' | 'paypal') => {
+    if (!url) return;
+    navigator.clipboard.writeText(url);
+    if (type === 'razorpay') {
+      setCopiedRazorpay(true);
+      setTimeout(() => setCopiedRazorpay(false), 2000);
+    } else {
+      setCopiedPaypal(true);
+      setTimeout(() => setCopiedPaypal(false), 2000);
+    }
+    toast({ title: "Webhook URL Copied 📋", description: `${url} copied to clipboard.` });
+  };
 
   const loadSettings = useCallback(async () => {
     setIsLoadingSettings(true);
@@ -241,26 +266,181 @@ export default function AdminSettingsPage() {
           </TabsContent>
 
           {/* PAYMENT SETTINGS */}
-          <TabsContent value="payment" className="space-y-4 pt-4">
-            <Card>
+          <TabsContent value="payment" className="space-y-6 pt-4">
+            {/* RAZORPAY CARD */}
+            <Card className="border-primary/20 shadow-sm">
               <CardHeader>
-                <CardTitle>Razorpay Payment Gateway</CardTitle>
-                <CardDescription>Configure credentials for accepting payments on subscription plans.</CardDescription>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center text-xl">
+                      <CreditCard className="mr-2 h-5 w-5 text-primary" /> Razorpay Payment Gateway
+                    </CardTitle>
+                    <CardDescription>Configure credentials and webhook endpoint for Razorpay online payments.</CardDescription>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Label htmlFor="enableOnlinePayment" className="text-sm font-semibold">Enable Razorpay</Label>
+                    <Switch
+                      id="enableOnlinePayment"
+                      checked={settings.enableOnlinePayment ?? true}
+                      onCheckedChange={(checked) => {
+                        const currentPaypal = settings.enablePaypal ?? false;
+                        if (!checked && !currentPaypal) {
+                          toast({
+                            title: "Payment Gateway Compulsory 💳",
+                            description: "At least one payment gateway must remain active. PayPal has been automatically enabled.",
+                          });
+                          setSettings(prev => ({ ...prev, enableOnlinePayment: false, enablePaypal: true }));
+                        } else {
+                          setSettings(prev => ({ ...prev, enableOnlinePayment: checked }));
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Razorpay Key ID</Label>
-                  <Input name="razorpayKeyId" value={settings.razorpayKeyId || ''} onChange={handleInputChange} placeholder="rzp_live_..." />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="font-semibold">Razorpay Key ID</Label>
+                    <Input name="razorpayKeyId" value={settings.razorpayKeyId || ''} onChange={handleInputChange} placeholder="rzp_live_..." />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="font-semibold">Razorpay Key Secret</Label>
+                    <Input name="razorpayKeySecret" type="password" value={settings.razorpayKeySecret || ''} onChange={handleInputChange} placeholder="••••••••" />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label>Razorpay Key Secret</Label>
-                  <Input name="razorpayKeySecret" type="password" value={settings.razorpayKeySecret || ''} onChange={handleInputChange} placeholder="••••••••" />
+
+                <div className="space-y-2 pt-2">
+                  <Label className="font-semibold">Razorpay Webhook Secret (Optional)</Label>
+                  <Input name="razorpayWebhookSecret" type="password" value={settings.razorpayWebhookSecret || ''} onChange={handleInputChange} placeholder="Secret defined in Razorpay Webhooks dashboard" />
+                </div>
+
+                {/* DYNAMIC RAZORPAY WEBHOOK URL DISPLAY (ENV DOMAIN) */}
+                <div className="p-4 rounded-xl bg-muted/60 border border-border space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-bold text-foreground flex items-center gap-1.5">
+                      <Globe className="h-4 w-4 text-primary" /> Razorpay Webhook URL
+                    </Label>
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => handleCopyUrl(`${getBaseUrl().replace(/\/$/, '')}/api/webhooks/razorpay`, 'razorpay')}
+                      className="h-8 text-xs font-semibold"
+                    >
+                      {copiedRazorpay ? <Check className="h-3.5 w-3.5 mr-1 text-emerald-500" /> : <Copy className="h-3.5 w-3.5 mr-1" />}
+                      {copiedRazorpay ? "Copied" : "Copy Webhook URL"}
+                    </Button>
+                  </div>
+                  <div className="font-mono text-xs text-muted-foreground bg-background p-2.5 rounded-lg border border-border break-all">
+                    {`${getBaseUrl().replace(/\/$/, '')}/api/webhooks/razorpay`}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Add this webhook URL in your Razorpay Dashboard under Settings &gt; Webhooks for events: <code>payment.captured</code>, <code>order.paid</code>, <code>subscription.charged</code>.
+                  </p>
                 </div>
               </CardContent>
               <CardFooter className="border-t pt-4">
-                <Button onClick={() => handleSaveSettings('Payment Gateway')} disabled={isSaving}>
+                <Button onClick={() => handleSaveSettings('Razorpay Payment Gateway')} disabled={isSaving}>
                   {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  <Save className="mr-2 h-4 w-4" /> Save Payment Settings
+                  <Save className="mr-2 h-4 w-4" /> Save Razorpay Settings
+                </Button>
+              </CardFooter>
+            </Card>
+
+            {/* PAYPAL CARD */}
+            <Card className="border-blue-500/20 shadow-sm">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center text-xl text-blue-600 dark:text-blue-400">
+                      <DollarSign className="mr-2 h-5 w-5" /> PayPal Payment Gateway
+                    </CardTitle>
+                    <CardDescription>Accept international payments and subscriptions via PayPal.</CardDescription>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Label htmlFor="enablePaypal" className="text-sm font-semibold">Enable PayPal</Label>
+                    <Switch
+                      id="enablePaypal"
+                      checked={settings.enablePaypal ?? false}
+                      onCheckedChange={(checked) => {
+                        const currentRazorpay = settings.enableOnlinePayment ?? true;
+                        if (!checked && !currentRazorpay) {
+                          toast({
+                            title: "Payment Gateway Compulsory 💳",
+                            description: "At least one payment gateway must remain active. Razorpay has been automatically enabled.",
+                          });
+                          setSettings(prev => ({ ...prev, enablePaypal: false, enableOnlinePayment: true }));
+                        } else {
+                          setSettings(prev => ({ ...prev, enablePaypal: checked }));
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label className="font-semibold">PayPal Environment Mode</Label>
+                  <Select 
+                    value={settings.paypalMode || 'sandbox'} 
+                    onValueChange={(val) => setSettings(prev => ({ ...prev, paypalMode: val as 'sandbox' | 'live' }))}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select Mode" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="sandbox">Sandbox (Testing / Developer Mode)</SelectItem>
+                      <SelectItem value="live">Live (Production Payments)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="font-semibold">PayPal Client ID</Label>
+                    <Input name="paypalClientId" value={settings.paypalClientId || ''} onChange={handleInputChange} placeholder="Client ID from PayPal Developer Portal" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="font-semibold">PayPal Client Secret</Label>
+                    <Input name="paypalClientSecret" type="password" value={settings.paypalClientSecret || ''} onChange={handleInputChange} placeholder="••••••••" />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="font-semibold">PayPal Webhook Secret / ID (Optional)</Label>
+                  <Input name="paypalWebhookId" type="password" value={settings.paypalWebhookId || ''} onChange={handleInputChange} placeholder="Webhook ID defined in PayPal Developer Webhook Settings" />
+                </div>
+
+                {/* DYNAMIC PAYPAL WEBHOOK URL DISPLAY (ENV DOMAIN) */}
+                <div className="p-4 rounded-xl bg-blue-500/5 border border-blue-500/20 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-bold text-foreground flex items-center gap-1.5">
+                      <Globe className="h-4 w-4 text-blue-500" /> PayPal Webhook URL
+                    </Label>
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => handleCopyUrl(`${getBaseUrl().replace(/\/$/, '')}/api/webhooks/paypal`, 'paypal')}
+                      className="h-8 text-xs font-semibold"
+                    >
+                      {copiedPaypal ? <Check className="h-3.5 w-3.5 mr-1 text-emerald-500" /> : <Copy className="h-3.5 w-3.5 mr-1" />}
+                      {copiedPaypal ? "Copied" : "Copy Webhook URL"}
+                    </Button>
+                  </div>
+                  <div className="font-mono text-xs text-muted-foreground bg-background p-2.5 rounded-lg border border-border break-all">
+                    {`${getBaseUrl().replace(/\/$/, '')}/api/webhooks/paypal`}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Add this webhook URL in your PayPal Developer Portal under App &gt; Webhooks for events: <code>PAYMENT.CAPTURE.COMPLETED</code>, <code>CHECKOUT.ORDER.APPROVED</code>.
+                  </p>
+                </div>
+              </CardContent>
+              <CardFooter className="border-t pt-4">
+                <Button onClick={() => handleSaveSettings('PayPal Payment Gateway')} disabled={isSaving}>
+                  {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  <Save className="mr-2 h-4 w-4" /> Save PayPal Settings
                 </Button>
               </CardFooter>
             </Card>

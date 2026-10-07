@@ -597,6 +597,12 @@ export interface AppSettings {
   enableOnlinePayment: boolean;
   razorpayKeyId: string;
   razorpayKeySecret: string;
+  razorpayWebhookSecret?: string;
+  enablePaypal?: boolean;
+  paypalMode?: 'sandbox' | 'live';
+  paypalClientId?: string;
+  paypalClientSecret?: string;
+  paypalWebhookId?: string;
   enableCOD: boolean; // Represents "Pay After Service"
   // Time Slots
   timeSlotSettings: {

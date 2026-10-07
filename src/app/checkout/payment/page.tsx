@@ -132,10 +132,112 @@ export default function SubscriptionPaymentPage() {
     loadPlan();
   }, [planId, planNameParam, amountParam, daysParam]);
 
+  const [paymentMethod, setPaymentMethod] = useState<'razorpay' | 'paypal'>('razorpay');
+  const [isPaypalEnabled, setIsPaypalEnabled] = useState(false);
+
+  useEffect(() => {
+    async function loadSettings() {
+      try {
+        const res = await fetch('/api/db/settings?key=applicationConfig');
+        const json = await res.json();
+        if (json.success && json.data) {
+          if (json.data.enablePaypal) {
+            setIsPaypalEnabled(true);
+          }
+        }
+      } catch (e) {
+        console.error("Failed to fetch payment settings:", e);
+      }
+    }
+    loadSettings();
+  }, []);
+
+  // Handle returning from PayPal Approval Redirect
+  useEffect(() => {
+    const paypalToken = searchParams.get('token') || searchParams.get('paypal_order_id');
+    const PayerID = searchParams.get('PayerID');
+
+    if (paypalToken && PayerID && user && !isSuccess) {
+      const currentUid = user.uid;
+      async function capturePaypal() {
+        setIsProcessing(true);
+        try {
+          const res = await fetch('/api/paypal/capture-order', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              orderId: paypalToken,
+              userId: currentUid,
+              planId: selectedPlan?.id || planId,
+              durationDays: selectedPlan?.durationDays || 30,
+            })
+          });
+
+          const data = await res.json();
+          if (res.ok && data.success) {
+            setIsSuccess(true);
+            toast({
+              title: "Subscription Activated! 🎉",
+              description: `Payment captured via PayPal. You are now subscribed to ${selectedPlan?.name || 'Pro Pass'}.`,
+            });
+            setTimeout(() => {
+              router.push(returnUrl);
+            }, 2500);
+          } else {
+            throw new Error(data.error || 'Failed to capture PayPal payment.');
+          }
+        } catch (err: any) {
+          toast({
+            title: "PayPal Payment Failed",
+            description: err.message || "Failed to finalize PayPal payment.",
+            variant: "destructive"
+          });
+        } finally {
+          setIsProcessing(false);
+        }
+      }
+      capturePaypal();
+    }
+  }, [searchParams, user, selectedPlan, planId, returnUrl, isSuccess, router, toast]);
+
   const handlePayment = async () => {
     if (!user || !selectedPlan) return;
     setIsProcessing(true);
 
+    if (paymentMethod === 'paypal') {
+      try {
+        // Create PayPal Order
+        const paypalRes = await fetch('/api/paypal/create-order', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            amount: selectedPlan.price,
+            currency: 'USD',
+            planName: selectedPlan.name,
+            userId: user.uid,
+            planId: selectedPlan.id,
+          })
+        });
+
+        const paypalData = await paypalRes.json();
+        if (!paypalRes.ok || !paypalData.success || !paypalData.approveUrl) {
+          throw new Error(paypalData.error || 'Failed to initialize PayPal order.');
+        }
+
+        // Redirect user to PayPal approval URL
+        window.location.href = paypalData.approveUrl;
+      } catch (error: any) {
+        toast({
+          title: "PayPal Error",
+          description: error.message || "Could not launch PayPal payment.",
+          variant: "destructive"
+        });
+        setIsProcessing(false);
+      }
+      return;
+    }
+
+    // Razorpay Flow
     try {
       const amountInPaise = Math.max(100, Math.round(selectedPlan.price * 100));
 
@@ -144,7 +246,9 @@ export default function SubscriptionPaymentPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           amount: amountInPaise,
-          currency: 'INR'
+          currency: 'INR',
+          userId: user.uid,
+          planId: selectedPlan.id,
         })
       });
 
@@ -263,12 +367,48 @@ export default function SubscriptionPaymentPage() {
                 Secure Checkout
               </Badge>
               <CardTitle className="text-2xl font-black">{selectedPlan.name}</CardTitle>
-              <CardDescription>Review your plan details before proceeding to payment.</CardDescription>
+              <CardDescription>Review your plan details and choose payment gateway.</CardDescription>
             </CardHeader>
             <CardContent className="pt-6 space-y-6">
               <div className="flex justify-between items-baseline p-4 rounded-2xl bg-secondary/20">
                 <span className="font-bold text-sm">Total Amount</span>
                 <span className="text-3xl font-black text-primary">₹{selectedPlan.price}</span>
+              </div>
+
+              {/* PAYMENT METHOD SELECTOR */}
+              <div className="space-y-3">
+                <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Select Payment Gateway:</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod('razorpay')}
+                    className={`p-3.5 rounded-xl border text-left flex flex-col justify-between transition-all ${
+                      paymentMethod === 'razorpay'
+                        ? 'border-primary bg-primary/5 ring-2 ring-primary/20 font-bold'
+                        : 'border-border bg-card hover:bg-accent/50'
+                    }`}
+                  >
+                    <span className="text-sm font-bold flex items-center gap-1.5">
+                      <ShieldCheck className="h-4 w-4 text-emerald-500" /> Razorpay
+                    </span>
+                    <span className="text-[11px] text-muted-foreground mt-1">UPI, Cards, NetBanking</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod('paypal')}
+                    className={`p-3.5 rounded-xl border text-left flex flex-col justify-between transition-all ${
+                      paymentMethod === 'paypal'
+                        ? 'border-blue-500 bg-blue-500/5 ring-2 ring-blue-500/20 font-bold'
+                        : 'border-border bg-card hover:bg-accent/50'
+                    }`}
+                  >
+                    <span className="text-sm font-bold flex items-center gap-1.5 text-blue-600 dark:text-blue-400">
+                      PayPal
+                    </span>
+                    <span className="text-[11px] text-muted-foreground mt-1">International Cards & PayPal</span>
+                  </button>
+                </div>
               </div>
 
               <div className="space-y-2">
@@ -285,17 +425,19 @@ export default function SubscriptionPaymentPage() {
               <Button 
                 onClick={handlePayment} 
                 disabled={isProcessing}
-                className="w-full h-12 font-bold text-base rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 shadow-md"
+                className={`w-full h-12 font-bold text-base rounded-xl text-white shadow-md ${
+                  paymentMethod === 'paypal' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-primary hover:bg-primary/90'
+                }`}
               >
                 {isProcessing ? (
                   <Loader2 className="h-5 w-5 animate-spin mr-2" />
                 ) : (
                   <Lock className="h-4 w-4 mr-2" />
                 )}
-                Pay ₹{selectedPlan.price} Securely
+                {paymentMethod === 'paypal' ? `Pay with PayPal ($${selectedPlan.price})` : `Pay ₹${selectedPlan.price} with Razorpay`}
               </Button>
               <p className="text-[11px] text-center text-muted-foreground flex items-center justify-center gap-1">
-                <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" /> 256-Bit Encrypted Razorpay Gateway
+                <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" /> 256-Bit SSL Encrypted Payment Gateway
               </p>
             </CardFooter>
           </Card>
