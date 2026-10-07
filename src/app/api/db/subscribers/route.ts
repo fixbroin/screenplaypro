@@ -9,8 +9,25 @@ export async function GET() {
        WHERE u.subscriptionActive = 1 OR u.subscriptionPlanName IS NOT NULL OR u.subscriptionExpiresAt IS NOT NULL`
     );
 
+    const subHistoryRows = await queryDb<any[]>(
+      `SELECT userId, planName, amount, startDate, createdAt FROM userSubscriptions ORDER BY createdAt DESC`
+    ).catch(() => []);
+
     const now = Date.now();
     const subscribers = rows.map(u => {
+      const userHistory = subHistoryRows.filter(h => h.userId === u.id);
+      const currentPlanName = u.subscriptionPlanName || 'Screenplay Pro';
+      
+      let previousPlanName = '';
+      if (userHistory.length > 1) {
+        const differentPlan = userHistory.find(h => h.planName && h.planName !== currentPlanName);
+        if (differentPlan) {
+          previousPlanName = differentPlan.planName;
+        } else {
+          previousPlanName = userHistory[1].planName || '';
+        }
+      }
+
       const expiresMillis = u.subscriptionExpiresAt ? new Date(u.subscriptionExpiresAt).getTime() : 0;
       const startMillis = u.lastSubscriptionAt ? new Date(u.lastSubscriptionAt).getTime() : 0;
       const isExpired = !u.subscriptionActive || (expiresMillis > 0 && now > expiresMillis);
@@ -21,7 +38,9 @@ export async function GET() {
         displayName: u.displayName || '',
         mobileNumber: u.mobileNumber || '',
         subscriptionActive: Boolean(u.subscriptionActive),
-        subscriptionPlanName: u.subscriptionPlanName || 'Screenplay Pro',
+        subscriptionPlanName: currentPlanName,
+        previousPlanName: previousPlanName,
+        totalSubscriptionsCount: userHistory.length,
         subscriptionExpiresAt: u.subscriptionExpiresAt,
         lastSubscriptionAt: u.lastSubscriptionAt,
         isExpired,

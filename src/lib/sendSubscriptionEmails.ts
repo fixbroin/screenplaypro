@@ -56,23 +56,25 @@ function createTransporter(config: SMTPConfig) {
 function getBaseTemplate(title: string, bodyHtml: string) {
   return `
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title}</title>
   <style>
-    body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background-color: #f4f6f8; margin: 0; padding: 0; }
-    .container { max-width: 600px; margin: 20px auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
-    .header { background: linear-gradient(135deg, #0f766e, #0d9488); color: #ffffff; padding: 30px 20px; text-align: center; }
-    .header h1 { margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.5px; }
-    .header p { margin: 5px 0 0 0; font-size: 13px; opacity: 0.9; text-transform: uppercase; tracking: 1px; }
-    .content { padding: 30px; color: #334155; line-height: 1.6; font-size: 15px; }
-    .info-card { background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin: 20px 0; }
-    .info-table { width: 100%; border-collapse: collapse; }
-    .info-table td { padding: 8px 0; font-size: 14px; }
-    .info-table td.label { font-weight: bold; color: #64748b; width: 40%; }
-    .info-table td.value { color: #0f172a; font-weight: 600; text-align: right; }
-    .btn { display: inline-block; background-color: #0f766e; color: #ffffff !important; font-weight: bold; padding: 14px 28px; border-radius: 10px; text-decoration: none; margin-top: 20px; text-align: center; font-size: 15px; }
-    .footer { background-color: #f1f5f9; padding: 20px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px solid #e2e8f0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f1f5f9; margin: 0; padding: 12px; }
+    .container { max-width: 480px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; }
+    .header { background: linear-gradient(135deg, #0f766e, #0d9488); color: #ffffff; padding: 24px 16px; text-align: center; }
+    .header h1 { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.5px; }
+    .header p { margin: 6px 0 0 0; font-size: 12px; opacity: 0.95; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; }
+    .content { padding: 20px 16px; color: #334155; line-height: 1.6; font-size: 14px; }
+    .info-card { background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px 16px; margin: 18px 0; }
+    .info-item { padding: 10px 0; border-bottom: 1px solid #e2e8f0; text-align: left; }
+    .info-item:last-child { border-bottom: none; }
+    .info-label { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.6px; color: #64748b; margin-bottom: 4px; display: block; }
+    .info-value { font-size: 15px; font-weight: 700; color: #0f172a; word-break: break-all; display: block; line-height: 1.4; text-align: left; }
+    .btn { display: block; width: 100%; box-sizing: border-box; background-color: #0f766e; color: #ffffff !important; font-weight: bold; padding: 14px 18px; border-radius: 10px; text-decoration: none; margin-top: 20px; text-align: center; font-size: 15px; }
+    .footer { background-color: #f8fafc; padding: 16px; text-align: center; font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0; }
   </style>
 </head>
 <body>
@@ -86,7 +88,7 @@ function getBaseTemplate(title: string, bodyHtml: string) {
     </div>
     <div class="footer">
       <p>&copy; ${new Date().getFullYear()} Screenplay Pro. All rights reserved.</p>
-      <p>This is an automated system email.</p>
+      <p>Automated payment transaction notice.</p>
     </div>
   </div>
 </body>
@@ -112,20 +114,33 @@ export async function sendUserSubscriptionActivationEmail(params: {
     }
 
     const bodyHtml = `
-      <p>Hi <strong>${params.userName}</strong>,</p>
-      <p>Congratulations! Your subscription to <strong>${params.planName}</strong> is now active!</p>
+      <p style="font-size: 15px; margin-top: 0;">Hi <strong>${params.userName}</strong>,</p>
+      <p style="font-size: 14px;">Congratulations! Your subscription to <strong>${params.planName}</strong> is active!</p>
       
       <div class="info-card">
-        <table class="info-table">
-          <tr><td class="label">Plan Name</td><td class="value">${params.planName}</td></tr>
-          <tr><td class="label">Amount Paid</td><td class="value">₹${params.price}</td></tr>
-          <tr><td class="label">Start Date</td><td class="value">${params.startDate}</td></tr>
-          <tr><td class="label">Expiry Date</td><td class="value">${params.expiryDate}</td></tr>
-          <tr><td class="label">PDF Downloads</td><td class="value">Unlimited</td></tr>
-        </table>
+        <div class="info-item">
+          <span class="info-label">Plan Name</span>
+          <span class="info-value">${params.planName}</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Amount Paid</span>
+          <span class="info-value">₹${params.price}</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Start Date</span>
+          <span class="info-value">${params.startDate}</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Expiry Date</span>
+          <span class="info-value">${params.expiryDate}</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">PDF Downloads</span>
+          <span class="info-value">Unlimited Exports</span>
+        </div>
       </div>
 
-      <p>You can now export studio-standard PDF scripts, translate into Indian languages, and sync your screenplays to the cloud anytime.</p>
+      <p style="font-size: 13px;">You can now export studio-standard PDF scripts, translate into Indian languages, and sync your screenplays to the cloud anytime.</p>
       
       <div style="text-align: center;">
         <a href="https://screenplaypro.in/script-writing" class="btn">Start Writing Scripts</a>
@@ -161,15 +176,17 @@ export async function sendUserSubscriptionExpiryEmail(params: {
     }
 
     const bodyHtml = `
-      <p>Hi <strong>${params.userName}</strong>,</p>
-      <p>Your <strong>${params.planName}</strong> subscription at Screenplay Pro has expired on <strong>${params.expiryDate}</strong>.</p>
+      <p style="font-size: 15px; margin-top: 0;">Hi <strong>${params.userName}</strong>,</p>
+      <p style="font-size: 14px;">Your <strong>${params.planName}</strong> subscription at Screenplay Pro has expired on <strong>${params.expiryDate}</strong>.</p>
       
       <div class="info-card" style="border-left: 4px solid #ef4444;">
-        <p style="margin: 0; font-weight: bold; color: #dc2626;">Subscription Expired</p>
-        <p style="margin: 5px 0 0 0; font-size: 13px; color: #64748b;">To continue exporting studio-ready PDFs and accessing your saved scripts, please renew your plan.</p>
+        <div class="info-item" style="border-bottom: none;">
+          <span class="info-label" style="color: #dc2626;">Subscription Status</span>
+          <span class="info-value" style="color: #dc2626;">Expired</span>
+        </div>
       </div>
 
-      <p>Anyone can write and edit for free anytime. Upgrade or renew your subscription to unlock PDF script downloads.</p>
+      <p style="font-size: 13px;">Anyone can write and edit scripts for free anytime. Renew your subscription to unlock studio PDF downloads.</p>
       
       <div style="text-align: center;">
         <a href="https://screenplaypro.in/subscriptions?reason=pdf_export" class="btn" style="background-color: #dc2626;">Renew Subscription Now</a>
@@ -210,25 +227,50 @@ export async function sendAdminSubscriptionNotificationEmail(params: {
     }
 
     const bodyHtml = `
-      <p>Hello Admin,</p>
-      <p>A new subscription has just been activated on Screenplay Pro!</p>
+      <p style="font-size: 15px; margin-top: 0;">Hello Admin,</p>
+      <p style="font-size: 14px;">A new subscription has just been activated on Screenplay Pro!</p>
       
       <div class="info-card">
-        <table class="info-table">
-          <tr><td class="label">User Name</td><td class="value">${params.userName}</td></tr>
-          <tr><td class="label">User Email</td><td class="value">${params.userEmail}</td></tr>
-          <tr><td class="label">Mobile Number</td><td class="value">${params.userMobile || 'N/A'}</td></tr>
-          <tr><td class="label">Profile ID (UID)</td><td class="value">${params.userId}</td></tr>
-          <tr><td class="label">Plan Name</td><td class="value">${params.planName}</td></tr>
-          <tr><td class="label">Amount Paid</td><td class="value">₹${params.price}</td></tr>
-          <tr><td class="label">Order / Transaction ID</td><td class="value">${params.orderId || 'N/A'}</td></tr>
-          <tr><td class="label">Start Date</td><td class="value">${params.startDate}</td></tr>
-          <tr><td class="label">Expiry Date</td><td class="value">${params.expiryDate}</td></tr>
-        </table>
+        <div class="info-item">
+          <span class="info-label">User Name</span>
+          <span class="info-value">${params.userName}</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">User Email</span>
+          <span class="info-value">${params.userEmail}</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Mobile Number</span>
+          <span class="info-value">${params.userMobile || 'N/A'}</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Profile ID (UID)</span>
+          <span class="info-value">${params.userId}</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Plan Name</span>
+          <span class="info-value">${params.planName}</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Amount Paid</span>
+          <span class="info-value">₹${params.price}</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Order / Transaction ID</span>
+          <span class="info-value">${params.orderId || 'N/A'}</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Start Date</span>
+          <span class="info-value">${params.startDate}</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Expiry Date</span>
+          <span class="info-value">${params.expiryDate}</span>
+        </div>
       </div>
 
       <div style="text-align: center;">
-        <a href="https://screenplaypro.in/admin/subscriptions" class="btn">View Subscribed People in Admin</a>
+        <a href="https://screenplaypro.in/admin/subscriptions" class="btn">View Subscriptions in Admin</a>
       </div>
     `;
 

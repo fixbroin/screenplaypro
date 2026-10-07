@@ -77,6 +77,8 @@ export interface SubscriberUser extends FirestoreUser {
   isExpired: boolean;
   formattedStartDate: string;
   formattedExpiryDate: string;
+  previousPlanName?: string;
+  totalSubscriptionsCount?: number;
 }
 
 export default function SubscriptionManager() {
@@ -498,8 +500,17 @@ export default function SubscriptionManager() {
                               <p className="flex items-center gap-1"><Phone className="h-3 w-3 text-muted-foreground" /> {sub.mobileNumber || 'N/A'}</p>
                             </div>
                           </td>
-                          <td className="px-4 py-3 font-semibold">
-                            {sub.subscriptionPlanName || 'Standard Plan'}
+                          <td className="px-4 py-3">
+                            <div className="space-y-1">
+                              <p className="font-bold text-foreground">
+                                {sub.subscriptionPlanName || 'Standard Plan'}
+                              </p>
+                              {sub.previousPlanName && (
+                                <p className="text-[11px] text-muted-foreground">
+                                  <span className="font-bold text-amber-600 dark:text-amber-400">Previous:</span> {sub.previousPlanName}
+                                </p>
+                              )}
+                            </div>
                           </td>
                           <td className="px-4 py-3 text-xs text-muted-foreground">
                             {sub.formattedStartDate}

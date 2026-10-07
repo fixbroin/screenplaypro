@@ -56,15 +56,69 @@ export async function POST(req: NextRequest) {
       const planId = notes.planId || notes.plan_id;
 
       if (userId && planId) {
-        // Activate subscription in MySQL userSubscriptions
         const subscriptionId = `sub_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
         const now = new Date();
-        const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
+        let durationDays = 30;
+        let planName = 'Screenplay Pro Subscription';
+        let planPrice = 299;
+
+        try {
+          const planRows = await queryDb<any[]>("SELECT * FROM adminSubscriptionPlans WHERE id = ?", [planId]);
+          if (planRows.length > 0) {
+            durationDays = Number(planRows[0].durationDays || 30);
+            planName = planRows[0].name || planName;
+            planPrice = Number(planRows[0].price || planPrice);
+          } else if (planId === 'plan_annual') {
+            durationDays = 365;
+            planName = 'Annual Pro Pass';
+            planPrice = 1999;
+          } else if (planId === 'plan_lifetime') {
+            durationDays = 3650;
+            planName = 'Lifetime Writer Pass';
+            planPrice = 4999;
+          }
+        } catch (e) {
+          console.warn("Razorpay Webhook plan lookup error:", e);
+        }
+
+        const expiresAtDate = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000);
+        const expiresAt = expiresAtDate.toISOString();
+
+        // 1. Insert into MySQL userSubscriptions
+        try {
+          await queryDb(
+            `INSERT INTO userSubscriptions (id, userId, planId, planName, amount, startDate, endDate, status, razorpayOrderId, razorpayPaymentId, createdAt)
+             VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, NOW())`,
+            [subscriptionId, userId, planId, planName, planPrice, now, expiresAtDate, paymentEntity.order_id || 'razorpay_webhook', paymentEntity.id || 'razorpay_webhook']
+          );
+        } catch (mSubErr) {
+          console.warn("Razorpay Webhook userSubscriptions insert warning:", mSubErr);
+        }
+
+        // 2. Update MySQL users table
+        try {
+          await queryDb(
+            `UPDATE users SET 
+               subscriptionActive = 1,
+               currentSubscriptionId = ?,
+               subscriptionPlanName = ?,
+               subscriptionExpiresAt = ?,
+               lastSubscriptionAt = NOW(),
+               updatedAt = NOW()
+             WHERE id = ?`,
+            [planId, planName, expiresAtDate, userId]
+          );
+        } catch (myErr) {
+          console.warn("Razorpay Webhook MySQL users update warning:", myErr);
+        }
+
+        // 3. Insert into generic_collections
         const subscriptionData = {
           id: subscriptionId,
           userId: userId,
           planId: planId,
+          planName: planName,
           paymentId: paymentEntity.id || 'razorpay_webhook',
           status: 'active',
           startedAt: now.toISOString(),
@@ -77,25 +131,7 @@ export async function POST(req: NextRequest) {
           [subscriptionId, JSON.stringify(subscriptionData)]
         );
 
-        // Update user record
-        const userRows = await queryDb<any[]>(
-          "SELECT data FROM generic_collections WHERE collection_name = 'users' AND id = ?",
-          [userId]
-        );
-
-        if (userRows.length > 0) {
-          const userData = JSON.parse(userRows[0].data || '{}');
-          userData.subscriptionActive = true;
-          userData.currentSubscriptionId = subscriptionId;
-          userData.subscriptionExpiresAt = expiresAt;
-
-          await queryDb(
-            "UPDATE generic_collections SET data = ? WHERE collection_name = 'users' AND id = ?",
-            [JSON.stringify(userData), userId]
-          );
-        }
-
-        console.log(`Razorpay Webhook: Activated subscription ${subscriptionId} for user ${userId}`);
+        console.log(`Razorpay Webhook: Activated subscription ${planName} (${durationDays} days) for user ${userId}`);
       }
     }
 

@@ -28,12 +28,50 @@ export async function POST(req: NextRequest) {
         if (userId) {
           const subscriptionId = `sub_paypal_webhook_${Date.now()}`;
           const now = new Date();
-          const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+          
+          let durationDays = 30;
+          let planName = 'Screenplay Pro Subscription';
+          let planPrice = 299;
 
+          try {
+            const planRows = await queryDb<any[]>("SELECT * FROM adminSubscriptionPlans WHERE id = ?", [planId]);
+            if (planRows.length > 0) {
+              durationDays = Number(planRows[0].durationDays || 30);
+              planName = planRows[0].name || planName;
+              planPrice = Number(planRows[0].price || planPrice);
+            } else if (planId === 'plan_annual') {
+              durationDays = 365;
+              planName = 'Annual Pro Pass';
+              planPrice = 1999;
+            } else if (planId === 'plan_lifetime') {
+              durationDays = 3650;
+              planName = 'Lifetime Writer Pass';
+              planPrice = 4999;
+            }
+          } catch (e) {
+            console.warn("PayPal Webhook plan lookup error:", e);
+          }
+
+          const expiresAtDate = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000);
+          const expiresAt = expiresAtDate.toISOString();
+
+          // 1. Insert into MySQL userSubscriptions
+          try {
+            await queryDb(
+              `INSERT INTO userSubscriptions (id, userId, planId, planName, amount, startDate, endDate, status, razorpayOrderId, razorpayPaymentId, createdAt)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, NOW())`,
+              [subscriptionId, userId, planId, planName, planPrice, now, expiresAtDate, resource.id || 'paypal_webhook', resource.id || 'paypal_webhook']
+            );
+          } catch (mSubErr) {
+            console.warn("PayPal Webhook userSubscriptions table update warning:", mSubErr);
+          }
+
+          // 2. Insert into generic_collections
           const subscriptionData = {
             id: subscriptionId,
             userId: userId,
             planId: planId,
+            planName: planName,
             paymentId: resource.id || 'paypal_webhook',
             paymentProvider: 'paypal',
             status: 'active',
@@ -47,24 +85,26 @@ export async function POST(req: NextRequest) {
             [subscriptionId, JSON.stringify(subscriptionData)]
           );
 
-          // 1. Update Firestore
+          // 3. Update Firestore (optional fallback)
           try {
             const { adminDb } = await import('@/lib/firebaseAdmin');
-            const { Timestamp } = await import('firebase-admin/firestore');
-            const userRef = adminDb.collection('users').doc(userId);
-            await userRef.set({
-              subscriptionActive: true,
-              currentSubscriptionId: planId,
-              subscriptionPlanName: planId === 'plan_annual' ? 'Annual Pro Pass' : (planId === 'plan_lifetime' ? 'Lifetime Writer Pass' : 'Monthly Writer Pass'),
-              subscriptionExpiresAt: Timestamp.fromDate(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)),
-              lastSubscriptionAt: Timestamp.fromDate(new Date()),
-              updatedAt: Timestamp.fromDate(new Date())
-            }, { merge: true });
+            if (adminDb) {
+              const { Timestamp } = await import('firebase-admin/firestore');
+              const userRef = adminDb.collection('users').doc(userId);
+              await userRef.set({
+                subscriptionActive: true,
+                currentSubscriptionId: planId,
+                subscriptionPlanName: planName,
+                subscriptionExpiresAt: Timestamp.fromDate(expiresAtDate),
+                lastSubscriptionAt: Timestamp.fromDate(now),
+                updatedAt: Timestamp.fromDate(now)
+              }, { merge: true });
+            }
           } catch (fsErr) {
-            console.warn("PayPal Webhook Firestore sync warning:", fsErr);
+            // Quiet fallback
           }
 
-          // 2. Update MySQL users table
+          // 4. Update MySQL users table
           try {
             await queryDb(
               `UPDATE users SET 
@@ -75,13 +115,13 @@ export async function POST(req: NextRequest) {
                  lastSubscriptionAt = NOW(),
                  updatedAt = NOW()
                WHERE id = ?`,
-              [planId, planId === 'plan_annual' ? 'Annual Pro Pass' : (planId === 'plan_lifetime' ? 'Lifetime Writer Pass' : 'Monthly Writer Pass'), new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), userId]
+              [planId, planName, expiresAtDate, userId]
             );
           } catch (myErr) {
             console.warn("PayPal Webhook MySQL sync warning:", myErr);
           }
 
-          console.log(`PayPal Webhook: Activated subscription for user ${userId}`);
+          console.log(`PayPal Webhook: Activated subscription ${planName} (${durationDays} days) for user ${userId}`);
         }
       }
     }
