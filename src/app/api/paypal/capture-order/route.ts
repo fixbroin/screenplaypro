@@ -72,81 +72,89 @@ export async function POST(req: NextRequest) {
       throw new Error(captureData.message || captureData.details?.[0]?.description || 'PayPal payment capture failed.');
     }
 
-    // Resolve plan metadata
+    // Resolve plan metadata from MySQL first
     let durationDays = 30;
     let planName = 'Screenplay Pro Subscription';
     let planPrice = 299;
 
     try {
-      const planDoc = await adminDb.collection('adminSubscriptionPlans').doc(planId).get();
-      if (planDoc.exists) {
-        const pData = planDoc.data();
-        durationDays = pData?.durationDays || 30;
-        planName = pData?.name || planName;
-        planPrice = pData?.price || planPrice;
+      const rows = await queryDb<any[]>("SELECT * FROM adminSubscriptionPlans WHERE id = ?", [planId]);
+      if (rows.length > 0) {
+        durationDays = Number(rows[0].durationDays || 30);
+        planName = rows[0].name || planName;
+        planPrice = Number(rows[0].price || planPrice);
+      } else if (planId === 'plan_annual') {
+        durationDays = 365;
+        planName = 'Annual Pro Pass';
+        planPrice = 1999;
+      } else if (planId === 'plan_lifetime') {
+        durationDays = 3650;
+        planName = 'Lifetime Writer Pass';
+        planPrice = 4999;
       } else {
-        const rows = await queryDb<any[]>("SELECT * FROM adminSubscriptionPlans WHERE id = ?", [planId]);
-        if (rows.length > 0) {
-          durationDays = Number(rows[0].durationDays || 30);
-          planName = rows[0].name || planName;
-          planPrice = Number(rows[0].price || planPrice);
-        } else if (planId === 'plan_annual') {
-          durationDays = 365;
-          planName = 'Annual Pro Pass';
-          planPrice = 1999;
-        } else if (planId === 'plan_lifetime') {
-          durationDays = 3650;
-          planName = 'Lifetime Writer Pass';
-          planPrice = 4999;
-        } else {
-          durationDays = 30;
-          planName = 'Monthly Writer Pass';
-          planPrice = 299;
-        }
+        durationDays = 30;
+        planName = 'Monthly Writer Pass';
+        planPrice = 299;
       }
     } catch (e) {
-      console.warn("Error resolving plan metadata:", e);
+      console.warn("Error resolving plan metadata from MySQL:", e);
     }
 
     const now = new Date();
     const expiresAt = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000);
 
-    // 1. Optional Firestore User document update (safe fallback if Firestore API disabled)
+    // Fetch user details from MySQL first
     let userEmail = '';
     let userName = 'Screenwriter';
     let userMobile = '';
 
     try {
-      const userRef = adminDb.collection('users').doc(userId);
-      const userSnap = await userRef.get();
-      const userData = userSnap.exists ? userSnap.data() : null;
-      userEmail = userData?.email || '';
-      userName = userData?.displayName || 'Screenwriter';
-      userMobile = userData?.mobileNumber || '';
+      const uRows = await queryDb<any[]>("SELECT email, displayName, mobileNumber FROM users WHERE id = ?", [userId]);
+      if (uRows.length > 0) {
+        userEmail = uRows[0].email || '';
+        userName = uRows[0].displayName || 'Screenwriter';
+        userMobile = uRows[0].mobileNumber || '';
+      }
+    } catch (uErr) {
+      console.warn("Could not fetch user details from MySQL:", uErr);
+    }
 
-      await userRef.set({
-        subscriptionActive: true,
-        currentSubscriptionId: planId,
-        subscriptionPlanName: planName,
-        subscriptionExpiresAt: Timestamp.fromDate(expiresAt),
-        lastSubscriptionAt: Timestamp.fromDate(now),
-        updatedAt: Timestamp.fromDate(now)
-      }, { merge: true });
+    // 1. Optional Firestore User document update (silent if Firestore API disabled)
+    try {
+      if (adminDb) {
+        const userRef = adminDb.collection('users').doc(userId);
+        const userSnap = await userRef.get();
+        if (userSnap.exists) {
+          const userData = userSnap.data();
+          if (!userEmail) userEmail = userData?.email || '';
+          if (userName === 'Screenwriter') userName = userData?.displayName || 'Screenwriter';
+          if (!userMobile) userMobile = userData?.mobileNumber || '';
+        }
 
-      await adminDb.collection('userSubscriptions').add({
-        userId,
-        planId,
-        planName,
-        amount: planPrice,
-        startDate: Timestamp.fromDate(now),
-        endDate: Timestamp.fromDate(expiresAt),
-        status: 'active',
-        paymentId: captureData.id || orderId,
-        paymentProvider: 'paypal',
-        createdAt: Timestamp.fromDate(now)
-      });
+        await userRef.set({
+          subscriptionActive: true,
+          currentSubscriptionId: planId,
+          subscriptionPlanName: planName,
+          subscriptionExpiresAt: Timestamp.fromDate(expiresAt),
+          lastSubscriptionAt: Timestamp.fromDate(now),
+          updatedAt: Timestamp.fromDate(now)
+        }, { merge: true });
+
+        await adminDb.collection('userSubscriptions').add({
+          userId,
+          planId,
+          planName,
+          amount: planPrice,
+          startDate: Timestamp.fromDate(now),
+          endDate: Timestamp.fromDate(expiresAt),
+          status: 'active',
+          paymentId: captureData.id || orderId,
+          paymentProvider: 'paypal',
+          createdAt: Timestamp.fromDate(now)
+        });
+      }
     } catch (fsErr) {
-      console.warn("Firestore optional sync skipped or disabled:", fsErr);
+      // Quiet fallback when Firestore is disabled
     }
 
     // 2. Update MySQL users and userSubscriptions tables
@@ -155,7 +163,7 @@ export async function POST(req: NextRequest) {
       await queryDb(
         `INSERT INTO userSubscriptions (id, userId, planId, planName, amount, startDate, endDate, status, razorpayOrderId, razorpayPaymentId, createdAt)
          VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, NOW())`,
-        [subId, userId, planId, planName, planPrice, orderId, captureData.id || orderId]
+        [subId, userId, planId, planName, planPrice, now, expiresAt, orderId, captureData.id || orderId]
       );
       await queryDb(
         `UPDATE users SET 
