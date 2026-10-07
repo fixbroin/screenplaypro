@@ -315,11 +315,11 @@ export default function AdminSettingsPage() {
                   <Input name="razorpayWebhookSecret" type="password" value={settings.razorpayWebhookSecret || ''} onChange={handleInputChange} placeholder="Secret defined in Razorpay Webhooks dashboard" />
                 </div>
 
-                {/* DYNAMIC RAZORPAY WEBHOOK URL DISPLAY (ENV DOMAIN) */}
-                <div className="p-4 rounded-xl bg-muted/60 border border-border space-y-2">
+                {/* DYNAMIC RAZORPAY WEBHOOK URL DISPLAY & INSTRUCTIONS */}
+                <div className="p-4 rounded-xl bg-muted/60 border border-border space-y-3">
                   <div className="flex items-center justify-between">
                     <Label className="text-sm font-bold text-foreground flex items-center gap-1.5">
-                      <Globe className="h-4 w-4 text-primary" /> Razorpay Webhook URL
+                      <Globe className="h-4 w-4 text-primary" /> Razorpay Webhook URL & Setup Guide
                     </Label>
                     <Button 
                       type="button" 
@@ -332,12 +332,25 @@ export default function AdminSettingsPage() {
                       {copiedRazorpay ? "Copied" : "Copy Webhook URL"}
                     </Button>
                   </div>
-                  <div className="font-mono text-xs text-muted-foreground bg-background p-2.5 rounded-lg border border-border break-all">
+                  <div className="font-mono text-xs text-muted-foreground bg-background p-2.5 rounded-lg border border-border break-all select-all">
                     {`${getBaseUrl().replace(/\/$/, '')}/api/webhooks/razorpay`}
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Add this webhook URL in your Razorpay Dashboard under Settings &gt; Webhooks for events: <code>payment.captured</code>, <code>order.paid</code>, <code>subscription.charged</code>.
-                  </p>
+                  
+                  <div className="text-xs space-y-2 text-muted-foreground pt-1 border-t border-border/50">
+                    <p className="font-bold text-foreground">📌 Step-by-Step Razorpay Setup:</p>
+                    <ol className="list-decimal list-inside space-y-1 pl-1">
+                      <li>Log into <a href="https://dashboard.razorpay.com/" target="_blank" rel="noreferrer" className="text-primary underline">Razorpay Dashboard</a>.</li>
+                      <li>Navigate to <strong>Account & Settings</strong> &gt; <strong>Webhooks</strong>.</li>
+                      <li>Click <strong>+ Add New Webhook</strong> and paste the Webhook URL above.</li>
+                      <li>(Optional) Enter a Webhook Secret and paste it into the <em>Razorpay Webhook Secret</em> field above.</li>
+                      <li>Under <strong>Active Events</strong>, check the following events:</li>
+                    </ol>
+                    <div className="flex flex-wrap gap-1.5 pt-1 pl-4">
+                      <span className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 font-mono text-[11px] px-2 py-0.5 rounded-md font-bold">payment.captured</span>
+                      <span className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 font-mono text-[11px] px-2 py-0.5 rounded-md font-bold">order.paid</span>
+                      <span className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 font-mono text-[11px] px-2 py-0.5 rounded-md font-bold">subscription.charged</span>
+                    </div>
+                  </div>
                 </div>
               </CardContent>
               <CardFooter className="border-t pt-4">
@@ -412,11 +425,11 @@ export default function AdminSettingsPage() {
                   <Input name="paypalWebhookId" type="password" value={settings.paypalWebhookId || ''} onChange={handleInputChange} placeholder="Webhook ID defined in PayPal Developer Webhook Settings" />
                 </div>
 
-                {/* DYNAMIC PAYPAL WEBHOOK URL DISPLAY (ENV DOMAIN) */}
-                <div className="p-4 rounded-xl bg-blue-500/5 border border-blue-500/20 space-y-2">
+                {/* DYNAMIC PAYPAL WEBHOOK URL DISPLAY & INSTRUCTIONS */}
+                <div className="p-4 rounded-xl bg-blue-500/5 border border-blue-500/20 space-y-3">
                   <div className="flex items-center justify-between">
                     <Label className="text-sm font-bold text-foreground flex items-center gap-1.5">
-                      <Globe className="h-4 w-4 text-blue-500" /> PayPal Webhook URL
+                      <Globe className="h-4 w-4 text-blue-500" /> PayPal Webhook URL & Setup Guide
                     </Label>
                     <Button 
                       type="button" 
@@ -429,12 +442,24 @@ export default function AdminSettingsPage() {
                       {copiedPaypal ? "Copied" : "Copy Webhook URL"}
                     </Button>
                   </div>
-                  <div className="font-mono text-xs text-muted-foreground bg-background p-2.5 rounded-lg border border-border break-all">
+                  <div className="font-mono text-xs text-muted-foreground bg-background p-2.5 rounded-lg border border-border break-all select-all">
                     {`${getBaseUrl().replace(/\/$/, '')}/api/webhooks/paypal`}
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Add this webhook URL in your PayPal Developer Portal under App &gt; Webhooks for events: <code>PAYMENT.CAPTURE.COMPLETED</code>, <code>CHECKOUT.ORDER.APPROVED</code>.
-                  </p>
+                  
+                  <div className="text-xs space-y-2 text-muted-foreground pt-1 border-t border-blue-500/10">
+                    <p className="font-bold text-foreground">📌 Step-by-Step PayPal Setup:</p>
+                    <ol className="list-decimal list-inside space-y-1 pl-1">
+                      <li>Log into <a href="https://developer.paypal.com/" target="_blank" rel="noreferrer" className="text-blue-500 underline">PayPal Developer Portal</a>.</li>
+                      <li>Go to <strong>Apps & Credentials</strong> (switch between Sandbox and Live to match your mode).</li>
+                      <li>Select your REST API application and scroll down to <strong>Webhooks</strong>.</li>
+                      <li>Click <strong>Add Webhook</strong> and paste the Webhook URL above.</li>
+                      <li>Under <strong>Event Types</strong>, check the following events:</li>
+                    </ol>
+                    <div className="flex flex-wrap gap-1.5 pt-1 pl-4">
+                      <span className="bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 font-mono text-[11px] px-2 py-0.5 rounded-md font-bold">PAYMENT.CAPTURE.COMPLETED</span>
+                      <span className="bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 font-mono text-[11px] px-2 py-0.5 rounded-md font-bold">CHECKOUT.ORDER.APPROVED</span>
+                    </div>
+                  </div>
                 </div>
               </CardContent>
               <CardFooter className="border-t pt-4">
