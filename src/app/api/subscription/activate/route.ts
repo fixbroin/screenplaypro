@@ -38,69 +38,89 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 2. Fetch Plan Details from Firestore or defaults
+    // 2. Fetch Plan Details from MySQL / Firestore or defaults
     let durationDays = 30;
     let planName = 'Screenplay Pro Subscription';
     let planPrice = 299;
 
-    const planDoc = await adminDb.collection('adminSubscriptionPlans').doc(planId).get();
-    if (planDoc.exists) {
-      const planData = planDoc.data();
-      durationDays = planData?.durationDays || 30;
-      planName = planData?.name || planName;
-      planPrice = planData?.price || planPrice;
-    } else {
-      if (planId === 'plan_monthly') {
-        durationDays = 30;
-        planName = 'Monthly Writer Pass';
-        planPrice = 299;
-      } else if (planId === 'plan_annual') {
-        durationDays = 365;
-        planName = 'Annual Pro Pass';
-        planPrice = 1999;
-      } else if (planId === 'plan_lifetime') {
-        durationDays = 3650;
-        planName = 'Lifetime Writer Pass';
-        planPrice = 4999;
+    try {
+      const planDoc = await adminDb.collection('adminSubscriptionPlans').doc(planId).get();
+      if (planDoc.exists) {
+        const planData = planDoc.data();
+        durationDays = planData?.durationDays || 30;
+        planName = planData?.name || planName;
+        planPrice = planData?.price || planPrice;
+      }
+    } catch (e) {
+      // Fallback to MySQL query
+      try {
+        const { queryDb } = await import('@/lib/mysql');
+        const rows = await queryDb<any[]>("SELECT * FROM adminSubscriptionPlans WHERE id = ?", [planId]);
+        if (rows.length > 0) {
+          durationDays = Number(rows[0].durationDays || 30);
+          planName = rows[0].name || planName;
+          planPrice = Number(rows[0].price || planPrice);
+        } else if (planId === 'plan_annual') {
+          durationDays = 365;
+          planName = 'Annual Pro Pass';
+          planPrice = 1999;
+        } else if (planId === 'plan_lifetime') {
+          durationDays = 3650;
+          planName = 'Lifetime Writer Pass';
+          planPrice = 4999;
+        } else {
+          durationDays = 30;
+          planName = 'Monthly Writer Pass';
+          planPrice = 299;
+        }
+      } catch (dbErr) {
+        console.warn("Error loading plan details from MySQL:", dbErr);
       }
     }
 
-    // 3. Update User Subscription in Firestore & fetch User info
-    const userRef = adminDb.collection('users').doc(userId);
-    const userSnap = await userRef.get();
-    const userData = userSnap.exists ? userSnap.data() : null;
-    const userEmail = userData?.email || '';
-    const userName = userData?.displayName || 'Screenwriter';
-    const userMobile = userData?.mobileNumber || '';
+    // 3. Update User Subscription in Firestore (optional) & fetch User info
+    let userEmail = '';
+    let userName = 'Screenwriter';
+    let userMobile = '';
 
     const now = new Date();
     const expiresAt = new Date();
     expiresAt.setDate(now.getDate() + durationDays);
 
-    const subscriptionData = {
-      subscriptionActive: true,
-      currentSubscriptionId: planId,
-      subscriptionPlanName: planName,
-      subscriptionExpiresAt: Timestamp.fromDate(expiresAt),
-      lastSubscriptionAt: Timestamp.fromDate(now),
-      updatedAt: Timestamp.fromDate(now)
-    };
+    try {
+      const userRef = adminDb.collection('users').doc(userId);
+      const userSnap = await userRef.get();
+      const userData = userSnap.exists ? userSnap.data() : null;
+      userEmail = userData?.email || '';
+      userName = userData?.displayName || 'Screenwriter';
+      userMobile = userData?.mobileNumber || '';
 
-    await userRef.set(subscriptionData, { merge: true });
+      const subscriptionData = {
+        subscriptionActive: true,
+        currentSubscriptionId: planId,
+        subscriptionPlanName: planName,
+        subscriptionExpiresAt: Timestamp.fromDate(expiresAt),
+        lastSubscriptionAt: Timestamp.fromDate(now),
+        updatedAt: Timestamp.fromDate(now)
+      };
 
-    // 4. Record transaction in userSubscriptions (Firestore & MySQL)
-    await adminDb.collection('userSubscriptions').add({
-      userId,
-      planId,
-      planName,
-      amount: planPrice,
-      startDate: Timestamp.fromDate(now),
-      endDate: Timestamp.fromDate(expiresAt),
-      status: 'active',
-      razorpayOrderId: razorpay_order_id || 'test_order',
-      razorpayPaymentId: razorpay_payment_id || 'test_payment',
-      createdAt: Timestamp.fromDate(now)
-    });
+      await userRef.set(subscriptionData, { merge: true });
+
+      await adminDb.collection('userSubscriptions').add({
+        userId,
+        planId,
+        planName,
+        amount: planPrice,
+        startDate: Timestamp.fromDate(now),
+        endDate: Timestamp.fromDate(expiresAt),
+        status: 'active',
+        razorpayOrderId: razorpay_order_id || 'test_order',
+        razorpayPaymentId: razorpay_payment_id || 'test_payment',
+        createdAt: Timestamp.fromDate(now)
+      });
+    } catch (fsErr) {
+      console.warn("Firestore optional activation sync skipped:", fsErr);
+    }
 
     try {
       const { queryDb } = await import('@/lib/mysql');

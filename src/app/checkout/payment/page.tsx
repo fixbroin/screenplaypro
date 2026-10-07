@@ -327,11 +327,48 @@ export default function SubscriptionPaymentPage() {
     }
   };
 
+  const isReturningFromPaypal = Boolean(searchParams.get('token') || searchParams.get('paypal_order_id'));
+
   if (isLoadingPlan) {
     return (
       <div className="flex justify-center items-center py-24">
         <Loader2 className="h-10 w-10 animate-spin text-primary" />
       </div>
+    );
+  }
+
+  if (isReturningFromPaypal || isProcessing || isSuccess) {
+    return (
+      <ProtectedRoute>
+        <div className="container mx-auto px-4 py-16 max-w-xl">
+          {isSuccess ? (
+            <Card className="border-emerald-500/30 bg-emerald-500/5 text-center p-8 space-y-4 shadow-lg rounded-2xl">
+              <div className="h-16 w-16 rounded-full bg-emerald-500/10 text-emerald-500 flex items-center justify-center mx-auto">
+                <CheckCircle2 className="h-10 w-10" />
+              </div>
+              <h2 className="text-2xl font-black text-emerald-600">Payment Successful! 🎉</h2>
+              <p className="text-sm text-muted-foreground">
+                Thank you for upgrading! Your subscription is active. Redirecting you to your workspace...
+              </p>
+              <div className="pt-4">
+                <Button onClick={() => router.push(returnUrl)} className="font-bold">
+                  Go to Script Workspace Now
+                </Button>
+              </div>
+            </Card>
+          ) : (
+            <Card className="border-blue-500/30 bg-blue-500/5 text-center p-8 space-y-4 shadow-lg rounded-2xl">
+              <div className="h-16 w-16 rounded-full bg-blue-500/10 text-blue-600 flex items-center justify-center mx-auto animate-pulse">
+                <Loader2 className="h-10 w-10 animate-spin text-blue-600" />
+              </div>
+              <h2 className="text-2xl font-black text-blue-600">Finalizing Your PayPal Payment...</h2>
+              <p className="text-sm text-muted-foreground">
+                Please wait a moment while we verify your transaction and activate your subscription. Do not close or refresh this window.
+              </p>
+            </Card>
+          )}
+        </div>
+      </ProtectedRoute>
     );
   }
 
@@ -352,96 +389,86 @@ export default function SubscriptionPaymentPage() {
           <ArrowLeft className="h-4 w-4 mr-2" /> Back
         </Button>
 
-        {isSuccess ? (
-          <Card className="border-emerald-500/30 bg-emerald-500/5 text-center p-8 space-y-4 shadow-lg">
-            <div className="h-16 w-16 rounded-full bg-emerald-500/10 text-emerald-500 flex items-center justify-center mx-auto">
-              <CheckCircle2 className="h-10 w-10" />
+        <Card className="border-primary/10 shadow-lg">
+          <CardHeader className="text-center pb-4 border-b">
+            <Badge variant="outline" className="w-fit mx-auto mb-2 text-xs font-bold uppercase tracking-wider text-primary">
+              Secure Checkout
+            </Badge>
+            <CardTitle className="text-2xl font-black">{selectedPlan.name}</CardTitle>
+            <CardDescription>Review your plan details and choose payment gateway.</CardDescription>
+          </CardHeader>
+          <CardContent className="pt-6 space-y-6">
+            <div className="flex justify-between items-baseline p-4 rounded-2xl bg-secondary/20">
+              <span className="font-bold text-sm">Total Amount</span>
+              <span className="text-3xl font-black text-primary">₹{selectedPlan.price}</span>
             </div>
-            <h2 className="text-2xl font-black text-emerald-600">Payment Successful!</h2>
-            <p className="text-sm text-muted-foreground">Your subscription is active. Redirecting you back to your workspace...</p>
-          </Card>
-        ) : (
-          <Card className="border-primary/10 shadow-lg">
-            <CardHeader className="text-center pb-4 border-b">
-              <Badge variant="outline" className="w-fit mx-auto mb-2 text-xs font-bold uppercase tracking-wider text-primary">
-                Secure Checkout
-              </Badge>
-              <CardTitle className="text-2xl font-black">{selectedPlan.name}</CardTitle>
-              <CardDescription>Review your plan details and choose payment gateway.</CardDescription>
-            </CardHeader>
-            <CardContent className="pt-6 space-y-6">
-              <div className="flex justify-between items-baseline p-4 rounded-2xl bg-secondary/20">
-                <span className="font-bold text-sm">Total Amount</span>
-                <span className="text-3xl font-black text-primary">₹{selectedPlan.price}</span>
+
+            {/* PAYMENT METHOD SELECTOR */}
+            <div className="space-y-3">
+              <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Select Payment Gateway:</p>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('razorpay')}
+                  className={`p-3.5 rounded-xl border text-left flex flex-col justify-between transition-all ${
+                    paymentMethod === 'razorpay'
+                      ? 'border-primary bg-primary/5 ring-2 ring-primary/20 font-bold'
+                      : 'border-border bg-card hover:bg-accent/50'
+                  }`}
+                >
+                  <span className="text-sm font-bold flex items-center gap-1.5">
+                    <ShieldCheck className="h-4 w-4 text-emerald-500" /> Razorpay
+                  </span>
+                  <span className="text-[11px] text-muted-foreground mt-1">UPI, Cards, NetBanking</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('paypal')}
+                  className={`p-3.5 rounded-xl border text-left flex flex-col justify-between transition-all ${
+                    paymentMethod === 'paypal'
+                      ? 'border-blue-500 bg-blue-500/5 ring-2 ring-blue-500/20 font-bold'
+                      : 'border-border bg-card hover:bg-accent/50'
+                  }`}
+                >
+                  <span className="text-sm font-bold flex items-center gap-1.5 text-blue-600 dark:text-blue-400">
+                    PayPal
+                  </span>
+                  <span className="text-[11px] text-muted-foreground mt-1">International Cards & PayPal</span>
+                </button>
               </div>
+            </div>
 
-              {/* PAYMENT METHOD SELECTOR */}
-              <div className="space-y-3">
-                <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Select Payment Gateway:</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMethod('razorpay')}
-                    className={`p-3.5 rounded-xl border text-left flex flex-col justify-between transition-all ${
-                      paymentMethod === 'razorpay'
-                        ? 'border-primary bg-primary/5 ring-2 ring-primary/20 font-bold'
-                        : 'border-border bg-card hover:bg-accent/50'
-                    }`}
-                  >
-                    <span className="text-sm font-bold flex items-center gap-1.5">
-                      <ShieldCheck className="h-4 w-4 text-emerald-500" /> Razorpay
-                    </span>
-                    <span className="text-[11px] text-muted-foreground mt-1">UPI, Cards, NetBanking</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMethod('paypal')}
-                    className={`p-3.5 rounded-xl border text-left flex flex-col justify-between transition-all ${
-                      paymentMethod === 'paypal'
-                        ? 'border-blue-500 bg-blue-500/5 ring-2 ring-blue-500/20 font-bold'
-                        : 'border-border bg-card hover:bg-accent/50'
-                    }`}
-                  >
-                    <span className="text-sm font-bold flex items-center gap-1.5 text-blue-600 dark:text-blue-400">
-                      PayPal
-                    </span>
-                    <span className="text-[11px] text-muted-foreground mt-1">International Cards & PayPal</span>
-                  </button>
+            <div className="space-y-2">
+              <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Included Features:</p>
+              {selectedPlan.features?.map((feat, idx) => (
+                <div key={idx} className="flex items-start gap-2 text-xs font-medium">
+                  <Check className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
+                  <span>{feat}</span>
                 </div>
-              </div>
-
-              <div className="space-y-2">
-                <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Included Features:</p>
-                {selectedPlan.features?.map((feat, idx) => (
-                  <div key={idx} className="flex items-start gap-2 text-xs font-medium">
-                    <Check className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
-                    <span>{feat}</span>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-            <CardFooter className="pt-4 flex flex-col gap-3">
-              <Button 
-                onClick={handlePayment} 
-                disabled={isProcessing}
-                className={`w-full h-12 font-bold text-base rounded-xl text-white shadow-md ${
-                  paymentMethod === 'paypal' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-primary hover:bg-primary/90'
-                }`}
-              >
-                {isProcessing ? (
-                  <Loader2 className="h-5 w-5 animate-spin mr-2" />
-                ) : (
-                  <Lock className="h-4 w-4 mr-2" />
-                )}
-                {paymentMethod === 'paypal' ? `Pay with PayPal ($${selectedPlan.price})` : `Pay ₹${selectedPlan.price} with Razorpay`}
-              </Button>
-              <p className="text-[11px] text-center text-muted-foreground flex items-center justify-center gap-1">
-                <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" /> 256-Bit SSL Encrypted Payment Gateway
-              </p>
-            </CardFooter>
-          </Card>
-        )}
+              ))}
+            </div>
+          </CardContent>
+          <CardFooter className="pt-4 flex flex-col gap-3">
+            <Button 
+              onClick={handlePayment} 
+              disabled={isProcessing}
+              className={`w-full h-12 font-bold text-base rounded-xl text-white shadow-md ${
+                paymentMethod === 'paypal' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-primary hover:bg-primary/90'
+              }`}
+            >
+              {isProcessing ? (
+                <Loader2 className="h-5 w-5 animate-spin mr-2" />
+              ) : (
+                <Lock className="h-4 w-4 mr-2" />
+              )}
+              {paymentMethod === 'paypal' ? `Pay with PayPal ($${selectedPlan.price})` : `Pay ₹${selectedPlan.price} with Razorpay`}
+            </Button>
+            <p className="text-[11px] text-center text-muted-foreground flex items-center justify-center gap-1">
+              <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" /> 256-Bit SSL Encrypted Payment Gateway
+            </p>
+          </CardFooter>
+        </Card>
       </div>
     </ProtectedRoute>
   );

@@ -111,35 +111,43 @@ export async function POST(req: NextRequest) {
     const now = new Date();
     const expiresAt = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000);
 
-    // 1. Update Firestore User document
-    const userRef = adminDb.collection('users').doc(userId);
-    const userSnap = await userRef.get();
-    const userData = userSnap.exists ? userSnap.data() : null;
-    const userEmail = userData?.email || '';
-    const userName = userData?.displayName || 'Screenwriter';
-    const userMobile = userData?.mobileNumber || '';
+    // 1. Optional Firestore User document update (safe fallback if Firestore API disabled)
+    let userEmail = '';
+    let userName = 'Screenwriter';
+    let userMobile = '';
 
-    await userRef.set({
-      subscriptionActive: true,
-      currentSubscriptionId: planId,
-      subscriptionPlanName: planName,
-      subscriptionExpiresAt: Timestamp.fromDate(expiresAt),
-      lastSubscriptionAt: Timestamp.fromDate(now),
-      updatedAt: Timestamp.fromDate(now)
-    }, { merge: true });
+    try {
+      const userRef = adminDb.collection('users').doc(userId);
+      const userSnap = await userRef.get();
+      const userData = userSnap.exists ? userSnap.data() : null;
+      userEmail = userData?.email || '';
+      userName = userData?.displayName || 'Screenwriter';
+      userMobile = userData?.mobileNumber || '';
 
-    await adminDb.collection('userSubscriptions').add({
-      userId,
-      planId,
-      planName,
-      amount: planPrice,
-      startDate: Timestamp.fromDate(now),
-      endDate: Timestamp.fromDate(expiresAt),
-      status: 'active',
-      paymentId: captureData.id || orderId,
-      paymentProvider: 'paypal',
-      createdAt: Timestamp.fromDate(now)
-    });
+      await userRef.set({
+        subscriptionActive: true,
+        currentSubscriptionId: planId,
+        subscriptionPlanName: planName,
+        subscriptionExpiresAt: Timestamp.fromDate(expiresAt),
+        lastSubscriptionAt: Timestamp.fromDate(now),
+        updatedAt: Timestamp.fromDate(now)
+      }, { merge: true });
+
+      await adminDb.collection('userSubscriptions').add({
+        userId,
+        planId,
+        planName,
+        amount: planPrice,
+        startDate: Timestamp.fromDate(now),
+        endDate: Timestamp.fromDate(expiresAt),
+        status: 'active',
+        paymentId: captureData.id || orderId,
+        paymentProvider: 'paypal',
+        createdAt: Timestamp.fromDate(now)
+      });
+    } catch (fsErr) {
+      console.warn("Firestore optional sync skipped or disabled:", fsErr);
+    }
 
     // 2. Update MySQL users and userSubscriptions tables
     const subId = `sub_paypal_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
