@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryDb } from '@/lib/mysql';
 
 async function getPayPalAccessToken(clientId: string, clientSecret: string, isSandbox: boolean) {
+  const cleanId = clientId.trim();
+  const cleanSecret = clientSecret.trim();
   const baseUrl = isSandbox ? 'https://api-m.sandbox.paypal.com' : 'https://api-m.paypal.com';
-  const auth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+  const auth = Buffer.from(`${cleanId}:${cleanSecret}`).toString('base64');
 
   const res = await fetch(`${baseUrl}/v1/oauth2/token`, {
     method: 'POST',
@@ -16,7 +18,9 @@ async function getPayPalAccessToken(clientId: string, clientSecret: string, isSa
 
   const data = await res.json();
   if (!res.ok) {
-    throw new Error(data.error_description || 'Failed to authenticate with PayPal.');
+    const errorDetail = data.error_description || data.error || 'Client Authentication failed';
+    const modeName = isSandbox ? 'Sandbox' : 'Live';
+    throw new Error(`PayPal Authentication failed (${errorDetail}). Please check your PayPal Client ID, Secret, and Mode (${modeName}) in Admin Settings > Gateway.`);
   }
 
   return { accessToken: data.access_token, baseUrl };

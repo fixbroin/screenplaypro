@@ -5,7 +5,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Sparkles, Check, ShieldCheck, Zap, Loader2, FileText, Languages, Download, Cloud, AlertCircle, Calendar, CreditCard, DollarSign, Lock } from 'lucide-react';
+import { Sparkles, Check, ShieldCheck, Zap, Loader2, FileText, Languages, Cloud, AlertCircle, Calendar, CreditCard, DollarSign } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Breadcrumbs from '@/components/shared/Breadcrumbs';
@@ -13,12 +13,14 @@ import { useToast } from '@/hooks/use-toast';
 import type { SubscriptionPlan } from '@/types/firestore';
 import { cn } from '@/lib/utils';
 import { checkSubscriptionStatus } from '@/lib/subscriptionUtils';
+import Script from 'next/script';
 
 const DEFAULT_SCREENPLAY_PLANS: SubscriptionPlan[] = [
   {
     id: 'plan_monthly',
     name: 'Monthly Writer Pass',
     price: 299,
+    priceUsd: 4.99,
     durationDays: 30,
     isActive: true,
     order: 1,
@@ -34,6 +36,7 @@ const DEFAULT_SCREENPLAY_PLANS: SubscriptionPlan[] = [
     id: 'plan_annual',
     name: 'Annual Pro Pass',
     price: 1999,
+    priceUsd: 24.99,
     durationDays: 365,
     isActive: true,
     order: 2,
@@ -50,6 +53,7 @@ const DEFAULT_SCREENPLAY_PLANS: SubscriptionPlan[] = [
     id: 'plan_lifetime',
     name: 'Lifetime Writer Pass',
     price: 4999,
+    priceUsd: 59.99,
     durationDays: 3650,
     isActive: true,
     order: 3,
@@ -113,9 +117,136 @@ export default function SubscriptionsPage() {
 
   const subscriptionInfo = checkSubscriptionStatus(firestoreUser);
 
-  const proceedToCheckout = (plan: SubscriptionPlan, method: 'razorpay' | 'paypal') => {
+  const executeRazorpayPayment = async (plan: SubscriptionPlan) => {
+    if (!user) return;
+    setIsPurchasing(plan.id);
+    try {
+      const amountInPaise = Math.max(100, Math.round(plan.price * 100));
+      const orderRes = await fetch('/api/razorpay/create-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: amountInPaise,
+          currency: 'INR',
+          userId: user.uid,
+          planId: plan.id,
+        })
+      });
+
+      const orderData = await orderRes.json();
+      if (!orderRes.ok || !orderData.success) {
+        throw new Error(orderData.error || 'Failed to initialize payment gateway.');
+      }
+
+      const options = {
+        key: orderData.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+        amount: orderData.amount,
+        currency: orderData.currency || 'INR',
+        name: 'Screenplay Pro',
+        description: `Subscription: ${plan.name}`,
+        order_id: orderData.id,
+        handler: async function (response: any) {
+          try {
+            const activateRes = await fetch('/api/subscription/activate', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                userId: user.uid,
+                planId: plan.id,
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature
+              })
+            });
+
+            const activateData = await activateRes.json();
+            if (activateRes.ok && activateData.success) {
+              toast({
+                title: "Subscription Activated! 🎉",
+                description: `You are now subscribed to ${plan.name}.`,
+              });
+              window.location.reload();
+            } else {
+              throw new Error(activateData.error || 'Payment activation failed.');
+            }
+          } catch (err: any) {
+            toast({
+              title: "Activation Error",
+              description: err.message || "Failed to activate subscription.",
+              variant: "destructive"
+            });
+          } finally {
+            setIsPurchasing(null);
+          }
+        },
+        prefill: {
+          name: user.displayName || '',
+          email: user.email || '',
+        },
+        theme: {
+          color: '#0d9488'
+        }
+      };
+
+      if (typeof window !== 'undefined' && (window as any).Razorpay) {
+        const rzp = new (window as any).Razorpay(options);
+        rzp.open();
+      } else {
+        throw new Error('Razorpay SDK failed to load. Please refresh and try again.');
+      }
+    } catch (error: any) {
+      toast({
+        title: "Payment Failed",
+        description: error.message || "Could not launch Razorpay.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsPurchasing(null);
+    }
+  };
+
+  const executePaypalPayment = async (plan: SubscriptionPlan) => {
+    if (!user) return;
+    setIsPurchasing(plan.id);
+    try {
+      const paypalPrice = plan.priceUsd ?? Math.round((plan.price / 80) * 100) / 100;
+      const paypalRes = await fetch('/api/paypal/create-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: paypalPrice,
+          currency: 'USD',
+          planName: plan.name,
+          userId: user.uid,
+          planId: plan.id,
+        })
+      });
+
+      const paypalData = await paypalRes.json();
+      if (!paypalRes.ok || !paypalData.success || !paypalData.approveUrl) {
+        throw new Error(paypalData.error || 'Failed to initialize PayPal order. Check PayPal settings in Admin Panel.');
+      }
+
+      // Redirect user directly to PayPal approval URL
+      window.location.href = paypalData.approveUrl;
+    } catch (error: any) {
+      toast({
+        title: "PayPal Error",
+        description: error.message || "Could not launch PayPal payment.",
+        variant: "destructive"
+      });
+      setIsPurchasing(null);
+    }
+  };
+
+  const handleChooseGateway = (method: 'razorpay' | 'paypal') => {
+    if (!selectedPlanForModal) return;
     setIsModalOpen(false);
-    router.push(`/checkout/payment?planId=${plan.id}&planName=${encodeURIComponent(plan.name)}&amount=${plan.price}&days=${plan.durationDays}&paymentMethod=${method}`);
+    if (method === 'paypal') {
+      executePaypalPayment(selectedPlanForModal);
+    } else {
+      executeRazorpayPayment(selectedPlanForModal);
+    }
   };
 
   const handleSelectPlan = async (plan: SubscriptionPlan) => {
@@ -136,13 +267,19 @@ export default function SubscriptionsPage() {
       return;
     }
 
-    // Otherwise proceed with the only enabled payment gateway
-    const activeMethod = isPaypalEnabled ? 'paypal' : 'razorpay';
-    proceedToCheckout(plan, activeMethod);
+    // If only PayPal is enabled
+    if (isPaypalEnabled) {
+      executePaypalPayment(plan);
+      return;
+    }
+
+    // Otherwise launch Razorpay directly
+    executeRazorpayPayment(plan);
   };
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-6xl space-y-8">
+      <Script src="https://checkout.razorpay.com/v1/checkout.js" />
       <Breadcrumbs items={[{ label: 'Home', href: '/' }, { label: 'Subscriptions' }]} />
 
       {/* Header Banner */}
@@ -197,6 +334,7 @@ export default function SubscriptionsPage() {
           {plans.map((plan) => {
             const isPopular = plan.order === 2 || plan.name.toLowerCase().includes('annual') || plan.name.toLowerCase().includes('pro');
             const isCurrentPlan = firestoreUser?.currentSubscriptionId === plan.id && subscriptionInfo.isActive;
+            const usdPrice = plan.priceUsd ?? Math.round((plan.price / 80) * 100) / 100;
 
             return (
               <Card 
@@ -214,8 +352,11 @@ export default function SubscriptionsPage() {
 
                 <CardHeader className="pt-8 pb-4 text-center">
                   <CardTitle className="text-xl font-bold">{plan.name}</CardTitle>
-                  <div className="pt-4 flex items-baseline justify-center gap-1">
-                    <span className="text-4xl font-black">₹{plan.price}</span>
+                  <div className="pt-4 flex items-baseline justify-center gap-2 flex-wrap">
+                    <span className="text-3xl font-black">₹{plan.price}</span>
+                    {isPaypalEnabled && (
+                      <span className="text-lg font-bold text-blue-600 dark:text-blue-400">/ ${usdPrice}</span>
+                    )}
                     <span className="text-xs text-muted-foreground font-semibold">
                       / {plan.durationDays >= 365 ? (plan.durationDays >= 3000 ? 'Lifetime' : 'Year') : `${plan.durationDays} Days`}
                     </span>
@@ -286,13 +427,13 @@ export default function SubscriptionsPage() {
         </div>
       </div>
 
-      {/* POP-UP MODAL FOR PAYMENT GATEWAY CHOICE */}
+      {/* POP-UP MODAL FOR DIRECT PAYMENT GATEWAY LAUNCH */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
         <DialogContent className="sm:max-w-md rounded-2xl p-6">
           <DialogHeader className="text-center pb-2">
             <DialogTitle className="text-2xl font-black">Choose Payment Method</DialogTitle>
             <DialogDescription>
-              Select your preferred payment gateway to upgrade to <span className="font-bold text-foreground">{selectedPlanForModal?.name}</span> for ₹{selectedPlanForModal?.price}.
+              Select your preferred payment gateway to upgrade to <span className="font-bold text-foreground">{selectedPlanForModal?.name}</span>.
             </DialogDescription>
           </DialogHeader>
 
@@ -301,7 +442,7 @@ export default function SubscriptionsPage() {
               {/* RAZORPAY BUTTON */}
               <button
                 type="button"
-                onClick={() => selectedPlanForModal && proceedToCheckout(selectedPlanForModal, 'razorpay')}
+                onClick={() => handleChooseGateway('razorpay')}
                 className="w-full p-4 rounded-xl border border-primary/30 bg-primary/5 hover:bg-primary/10 flex items-center justify-between group transition-all text-left"
               >
                 <div className="flex items-center gap-3">
@@ -313,13 +454,13 @@ export default function SubscriptionsPage() {
                     <p className="text-xs text-muted-foreground">UPI, Credit/Debit Cards, NetBanking, Wallets</p>
                   </div>
                 </div>
-                <Badge className="bg-emerald-500 text-white font-bold text-[10px]">INR ₹</Badge>
+                <Badge className="bg-emerald-500 text-white font-bold text-[11px] px-2.5 py-1">₹{selectedPlanForModal?.price}</Badge>
               </button>
 
               {/* PAYPAL BUTTON */}
               <button
                 type="button"
-                onClick={() => selectedPlanForModal && proceedToCheckout(selectedPlanForModal, 'paypal')}
+                onClick={() => handleChooseGateway('paypal')}
                 className="w-full p-4 rounded-xl border border-blue-500/30 bg-blue-500/5 hover:bg-blue-500/10 flex items-center justify-between group transition-all text-left"
               >
                 <div className="flex items-center gap-3">
@@ -331,7 +472,9 @@ export default function SubscriptionsPage() {
                     <p className="text-xs text-muted-foreground">International Cards & PayPal Balance</p>
                   </div>
                 </div>
-                <Badge className="bg-blue-600 text-white font-bold text-[10px]">USD $</Badge>
+                <Badge className="bg-blue-600 text-white font-bold text-[11px] px-2.5 py-1">
+                  ${selectedPlanForModal?.priceUsd ?? Math.round(((selectedPlanForModal?.price || 0) / 80) * 100) / 100}
+                </Badge>
               </button>
             </div>
           </div>

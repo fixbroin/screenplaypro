@@ -81,6 +81,7 @@ export async function initDb() {
           id VARCHAR(128) PRIMARY KEY,
           name VARCHAR(255) NOT NULL,
           price DECIMAL(10,2) NOT NULL,
+          priceUsd DECIMAL(10,2),
           durationDays INT NOT NULL,
           features JSON,
           isActive TINYINT(1) DEFAULT 1,
@@ -89,6 +90,12 @@ export async function initDb() {
           updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
       `);
+
+      try {
+        await connection.query(`ALTER TABLE adminSubscriptionPlans ADD COLUMN priceUsd DECIMAL(10,2);`);
+      } catch (e) {
+        // column already exists
+      }
 
       // 4. User Subscriptions Table
       await connection.query(`

@@ -27,6 +27,7 @@ const DEFAULT_SCREENPLAY_PLANS: Partial<SubscriptionPlan>[] = [
   {
     name: 'Monthly Writer Pass',
     price: 299,
+    priceUsd: 4.99,
     durationDays: 30,
     isActive: true,
     order: 1,
@@ -41,6 +42,7 @@ const DEFAULT_SCREENPLAY_PLANS: Partial<SubscriptionPlan>[] = [
   {
     name: 'Annual Pro Pass',
     price: 1999,
+    priceUsd: 24.99,
     durationDays: 365,
     isActive: true,
     order: 2,
@@ -56,6 +58,7 @@ const DEFAULT_SCREENPLAY_PLANS: Partial<SubscriptionPlan>[] = [
   {
     name: 'Lifetime Writer Pass',
     price: 4999,
+    priceUsd: 59.99,
     durationDays: 3650,
     isActive: true,
     order: 3,
@@ -94,6 +97,7 @@ export default function SubscriptionManager() {
   const [formData, setFormData] = useState({
     name: '',
     price: 299,
+    priceUsd: 4.99,
     durationDays: 30,
     features: [''],
     isActive: true,
@@ -208,6 +212,7 @@ export default function SubscriptionManager() {
     setFormData({
       name: '',
       price: 299,
+      priceUsd: 4.99,
       durationDays: 30,
       features: ['Unlimited PDF Script Exports', 'Studio-Standard Formatting', 'Real-Time Cloud Autosave'],
       isActive: true,
@@ -221,6 +226,7 @@ export default function SubscriptionManager() {
     setFormData({
       name: plan.name,
       price: plan.price,
+      priceUsd: plan.priceUsd ?? Math.round((plan.price / 80) * 100) / 100,
       durationDays: plan.durationDays,
       features: plan.features && plan.features.length > 0 ? [...plan.features] : [''],
       isActive: plan.isActive ?? true,
@@ -258,6 +264,7 @@ export default function SubscriptionManager() {
         id: editingPlan?.id,
         name: formData.name.trim(),
         price: Number(formData.price),
+        priceUsd: Number(formData.priceUsd),
         durationDays: Number(formData.durationDays),
         features: cleanedFeatures,
         isActive: formData.isActive,
@@ -322,7 +329,7 @@ export default function SubscriptionManager() {
               </div>
               <h1 className="text-3xl font-headline font-black tracking-tight">Screenplay Pro Subscriptions</h1>
               <p className="text-muted-foreground text-sm">
-                Manage writer subscription plans, pricing, features, and view subscribed members.
+                Manage writer subscription plans, INR & USD pricing, features, and view subscribed members.
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -382,8 +389,9 @@ export default function SubscriptionManager() {
                         {plan.isActive ? "Active" : "Disabled"}
                       </Badge>
                     </div>
-                    <div className="pt-3">
+                    <div className="pt-3 flex items-baseline gap-2 flex-wrap">
                       <span className="text-3xl font-black">₹{plan.price}</span>
+                      <span className="text-lg font-bold text-blue-600 dark:text-blue-400">/ ${plan.priceUsd ?? Math.round((plan.price / 80) * 100) / 100}</span>
                       <span className="text-xs text-muted-foreground font-semibold"> / {plan.durationDays} days</span>
                     </div>
                   </CardHeader>
@@ -552,13 +560,23 @@ export default function SubscriptionManager() {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-3">
               <div className="space-y-2">
                 <Label>Price (INR ₹)</Label>
                 <Input
                   type="number"
                   value={formData.price}
                   onChange={(e) => setFormData({ ...formData, price: Number(e.target.value) })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Price (USD $)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  placeholder="4.99"
+                  value={formData.priceUsd}
+                  onChange={(e) => setFormData({ ...formData, priceUsd: Number(e.target.value) })}
                 />
               </div>
               <div className="space-y-2">

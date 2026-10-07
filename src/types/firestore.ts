@@ -230,6 +230,7 @@ export interface SubscriptionPlan {
   planType?: 'artist' | 'hire'; // 'artist' for profile listing, 'hire' for recruiter contact reveals
   name: string;
   price: number;
+  priceUsd?: number;            // Price in USD ($) for international PayPal payments
   durationDays: number;
   revealLimit?: number;        // X numbers allowed to reveal for hire plans
   features: string[];
