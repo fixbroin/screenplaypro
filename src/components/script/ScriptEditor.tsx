@@ -11,7 +11,9 @@ import {
   exportToPDF,
   translateScriptApi,
   createScript,
-  INDIAN_LANGUAGES
+  INDIAN_LANGUAGES,
+  SUPPORTED_LANGUAGES,
+  SOURCE_LANGUAGES
 } from "@/lib/scriptUtils";
 import { checkSubscriptionStatus } from "@/lib/subscriptionUtils";
 import { Script, ScriptElement, ScriptElementType, ScriptSettings } from "@/types/script";
@@ -36,7 +38,8 @@ import {
   Maximize2,
   Languages,
   Sparkles,
-  Copy
+  Copy,
+  ArrowRightLeft
 } from "lucide-react";
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
@@ -139,29 +142,49 @@ export function ScriptEditor({ id: propId }: { id?: string }) {
   const [viewportOffsetTop, setViewportOffsetTop] = useState(0);
 
   const [translateDialogOpen, setTranslateDialogOpen] = useState(false);
-  const [selectedTargetLang, setSelectedTargetLang] = useState('kn');
+  const [selectedSourceLang, setSelectedSourceLang] = useState('auto');
+  const [selectedTargetLang, setSelectedTargetLang] = useState('te');
   const [translateMode, setTranslateMode] = useState<'replace' | 'new_copy'>('replace');
   const [isTranslating, setIsTranslating] = useState(false);
   const { toast } = useToast();
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const editorRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
 
+  const handleSwapLanguages = () => {
+    if (selectedSourceLang === 'auto') {
+      setSelectedSourceLang(selectedTargetLang);
+      setSelectedTargetLang(selectedTargetLang === 'en' ? 'te' : 'en');
+    } else {
+      const prevSource = selectedSourceLang;
+      setSelectedSourceLang(selectedTargetLang);
+      setSelectedTargetLang(prevSource);
+    }
+  };
+
+  const handleQuickPairSelect = (source: string, target: string) => {
+    setSelectedSourceLang(source);
+    setSelectedTargetLang(target);
+  };
+
   const handleTranslateScript = async () => {
     if (!script || !user) return;
     setIsTranslating(true);
     try {
-      const selectedLangObj = INDIAN_LANGUAGES.find(l => l.code === selectedTargetLang);
-      const langName = selectedLangObj ? selectedLangObj.name : selectedTargetLang;
+      const sourceLangObj = SOURCE_LANGUAGES.find(l => l.code === selectedSourceLang);
+      const targetLangObj = SUPPORTED_LANGUAGES.find(l => l.code === selectedTargetLang);
+      const sourceName = sourceLangObj ? sourceLangObj.name.replace(/^[✨\s]+/, '') : selectedSourceLang;
+      const targetName = targetLangObj ? targetLangObj.name : selectedTargetLang;
 
       toast({
         title: "Translating Script",
-        description: `Translating screenplay into ${langName}... Please wait.`,
+        description: `Translating screenplay from ${sourceName} into ${targetName}... Please wait.`,
       });
 
-      const result = await translateScriptApi(script.content, selectedTargetLang, script.title);
+      const result = await translateScriptApi(script.content, selectedTargetLang, script.title, selectedSourceLang);
 
       if (translateMode === 'new_copy') {
-        const newTitle = `${result.translatedTitle || script.title} (${langName.split(' ')[0]})`;
+        const targetCleanName = targetName.split(' ')[0];
+        const newTitle = `${result.translatedTitle || script.title} (${targetCleanName})`;
         const newScriptId = await createScript(
           user.uid,
           user.email || '',
@@ -185,7 +208,7 @@ export function ScriptEditor({ id: propId }: { id?: string }) {
         
         toast({
           title: "Translation Complete!",
-          description: `Script successfully translated to ${langName}.`,
+          description: `Script successfully translated to ${targetName}.`,
         });
         setTranslateDialogOpen(false);
       }
@@ -1128,38 +1151,107 @@ export function ScriptEditor({ id: propId }: { id?: string }) {
         );
       })()}
       <Dialog open={translateDialogOpen} onOpenChange={setTranslateDialogOpen}>
-        <DialogContent className="max-w-lg sm:rounded-3xl p-6 border shadow-2xl">
+        <DialogContent className="max-w-xl sm:rounded-3xl p-6 border shadow-2xl">
           <DialogHeader>
             <div className="mx-auto w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-600 mb-3">
               <Languages className="w-6 h-6" />
             </div>
             <DialogTitle className="text-2xl font-black tracking-tight text-center">
-              1-Click Script Translator
+              Any-to-Any Script Translator
             </DialogTitle>
             <DialogDescription className="text-center text-muted-foreground text-sm mt-1">
-              Translate your entire screenplay into any Indian language while preserving the exact script formatting, dialogue blocks, colors, and line spacing.
+              Translate your screenplay between any languages (Telugu, Hindi, English, Kannada, Marathi, Tamil, and world languages) with formatting preserved.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 my-4">
-            <div>
-              <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2 block">
-                Target Language
-              </Label>
-              <Select value={selectedTargetLang} onValueChange={setSelectedTargetLang}>
-                <SelectTrigger className="w-full h-11 rounded-xl font-bold">
-                  <SelectValue placeholder="Select Language" />
-                </SelectTrigger>
-                <SelectContent className="rounded-xl max-h-60">
-                  {INDIAN_LANGUAGES.map((lang) => (
-                    <SelectItem key={lang.code} value={lang.code} className="font-bold cursor-pointer">
-                      {lang.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          <div className="space-y-4 my-3">
+            {/* From - Swap - To Language Selector */}
+            <div className="flex flex-col sm:flex-row items-center gap-2">
+              <div className="w-full sm:flex-1">
+                <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1.5 block">
+                  Translate From
+                </Label>
+                <Select value={selectedSourceLang} onValueChange={setSelectedSourceLang}>
+                  <SelectTrigger className="w-full h-11 rounded-xl font-bold">
+                    <SelectValue placeholder="Source Language" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl max-h-64">
+                    {SOURCE_LANGUAGES.map((lang) => (
+                      <SelectItem key={lang.code} value={lang.code} className="font-bold cursor-pointer">
+                        {lang.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex sm:flex-col items-center justify-center pt-1 sm:pt-5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={handleSwapLanguages}
+                  className="h-10 w-10 rounded-xl hover:bg-emerald-500/10 hover:text-emerald-600 hover:border-emerald-500/30 transition-all shadow-sm"
+                  title="Swap languages"
+                >
+                  <ArrowRightLeft className="w-4 h-4" />
+                </Button>
+              </div>
+
+              <div className="w-full sm:flex-1">
+                <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1.5 block">
+                  Translate To
+                </Label>
+                <Select value={selectedTargetLang} onValueChange={setSelectedTargetLang}>
+                  <SelectTrigger className="w-full h-11 rounded-xl font-bold">
+                    <SelectValue placeholder="Target Language" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl max-h-64">
+                    {SUPPORTED_LANGUAGES.map((lang) => (
+                      <SelectItem key={lang.code} value={lang.code} className="font-bold cursor-pointer">
+                        {lang.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
+            {/* Quick Presets */}
+            <div className="space-y-1.5 pt-1">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground block">
+                Popular Language Pairs:
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  { label: 'English → Telugu', src: 'en', tgt: 'te' },
+                  { label: 'Telugu → English', src: 'te', tgt: 'en' },
+                  { label: 'Hindi → Telugu', src: 'hi', tgt: 'te' },
+                  { label: 'Telugu → Hindi', src: 'te', tgt: 'hi' },
+                  { label: 'Kannada → Hindi', src: 'kn', tgt: 'hi' },
+                  { label: 'Telugu → Kannada', src: 'te', tgt: 'kn' },
+                  { label: 'Hindi → Marathi', src: 'hi', tgt: 'mr' },
+                  { label: 'Marathi → Hindi', src: 'mr', tgt: 'hi' },
+                  { label: 'English → Marathi', src: 'en', tgt: 'mr' },
+                ].map((pair, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => handleQuickPairSelect(pair.src, pair.tgt)}
+                    className={cn(
+                      "px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all",
+                      selectedSourceLang === pair.src && selectedTargetLang === pair.tgt
+                        ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
+                        : "bg-secondary/40 hover:bg-secondary border-border text-foreground/80 hover:text-foreground"
+                    )}
+                  >
+                    {pair.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Translation Mode */}
             <div>
               <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2 block">
                 Translation Mode

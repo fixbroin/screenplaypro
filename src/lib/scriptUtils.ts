@@ -1,20 +1,47 @@
 import { Script, ScriptElement, ScriptElementType } from "../types/script";
 import { nanoid } from "nanoid";
 
-export const INDIAN_LANGUAGES = [
-  { code: 'kn', name: 'Kannada (ಕನ್ನಡ)' },
-  { code: 'te', name: 'Telugu (తెలుగు)' },
-  { code: 'hi', name: 'Hindi (हिंदी)' },
-  { code: 'ta', name: 'Tamil (தமிழ்)' },
-  { code: 'ml', name: 'Malayalam (മലയാളം)' },
-  { code: 'bn', name: 'Bengali (বাংলা)' },
-  { code: 'mr', name: 'Marathi (मराठी)' },
-  { code: 'gu', name: 'Gujarati (ગુજરાતી)' },
-  { code: 'pa', name: 'Punjabi (ਪੰਜਾਬੀ)' },
-  { code: 'or', name: 'Odia (ଓଡ଼ିଆ)' },
-  { code: 'ur', name: 'Urdu (اردو)' },
-  { code: 'en', name: 'English' },
+export const SUPPORTED_LANGUAGES = [
+  // Indian Languages
+  { code: 'te', name: 'Telugu (తెలుగు)', category: 'Indian' },
+  { code: 'hi', name: 'Hindi (हिंदी)', category: 'Indian' },
+  { code: 'kn', name: 'Kannada (ಕನ್ನಡ)', category: 'Indian' },
+  { code: 'ta', name: 'Tamil (தமிழ்)', category: 'Indian' },
+  { code: 'ml', name: 'Malayalam (മലയാളം)', category: 'Indian' },
+  { code: 'mr', name: 'Marathi (मराठी)', category: 'Indian' },
+  { code: 'bn', name: 'Bengali (বাংলা)', category: 'Indian' },
+  { code: 'gu', name: 'Gujarati (ગુજરાતી)', category: 'Indian' },
+  { code: 'pa', name: 'Punjabi (ਪੰਜਾਬੀ)', category: 'Indian' },
+  { code: 'or', name: 'Odia (ଓଡ଼ିଆ)', category: 'Indian' },
+  { code: 'ur', name: 'Urdu (اردو)', category: 'Indian' },
+  { code: 'as', name: 'Assamese (অসমীয়া)', category: 'Indian' },
+  { code: 'sa', name: 'Sanskrit (संस्कृतम्)', category: 'Indian' },
+  // World Languages
+  { code: 'en', name: 'English', category: 'World' },
+  { code: 'es', name: 'Spanish (Español)', category: 'World' },
+  { code: 'fr', name: 'French (Français)', category: 'World' },
+  { code: 'de', name: 'German (Deutsch)', category: 'World' },
+  { code: 'it', name: 'Italian (Italiano)', category: 'World' },
+  { code: 'pt', name: 'Portuguese (Português)', category: 'World' },
+  { code: 'ru', name: 'Russian (Русский)', category: 'World' },
+  { code: 'zh-CN', name: 'Chinese (简体中文)', category: 'World' },
+  { code: 'ja', name: 'Japanese (日本語)', category: 'World' },
+  { code: 'ko', name: 'Korean (한국어)', category: 'World' },
+  { code: 'ar', name: 'Arabic (العربية)', category: 'World' },
+  { code: 'tr', name: 'Turkish (Türkçe)', category: 'World' },
+  { code: 'fa', name: 'Persian (فارسی)', category: 'World' },
+  { code: 'id', name: 'Indonesian (Bahasa)', category: 'World' },
+  { code: 'vi', name: 'Vietnamese (Tiếng Việt)', category: 'World' },
+  { code: 'th', name: 'Thai (ไทย)', category: 'World' },
 ];
+
+export const SOURCE_LANGUAGES = [
+  { code: 'auto', name: '✨ Auto-Detect Language', category: 'Special' },
+  ...SUPPORTED_LANGUAGES,
+];
+
+// Alias for backwards compatibility
+export const INDIAN_LANGUAGES = SUPPORTED_LANGUAGES;
 
 export const createScript = async (userId: string, userEmail: string, title: string, writtenBy: string = "", description: string = ""): Promise<string> => {
   const scriptId = nanoid(20);
@@ -178,13 +205,18 @@ export const getNextElementType = (currentType: ScriptElementType): ScriptElemen
   }
 };
 
-export const translateScriptApi = async (elements: ScriptElement[], targetLanguage: string, scriptTitle?: string) => {
+export const translateScriptApi = async (
+  elements: ScriptElement[], 
+  targetLanguage: string, 
+  scriptTitle?: string,
+  sourceLanguage: string = 'auto'
+) => {
   const response = await fetch('/api/scripts/translate', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ elements, targetLanguage, scriptTitle }),
+    body: JSON.stringify({ elements, sourceLanguage, targetLanguage, scriptTitle }),
   });
 
   if (!response.ok) {

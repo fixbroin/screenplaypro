@@ -1,12 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ScriptElement } from '@/types/script';
 
-async function translateSingleText(text: string, targetLang: string): Promise<string> {
+async function translateSingleText(text: string, sourceLang: string = 'auto', targetLang: string = 'en'): Promise<string> {
   if (!text || !text.trim()) return text;
   
-  // 1. Primary: Google Translate Chrome Extension Client
+  const sl = sourceLang && sourceLang.trim() ? sourceLang.trim() : 'auto';
+  const tl = targetLang && targetLang.trim() ? targetLang.trim() : 'en';
+
+  // If source and target are the same language, no translation needed
+  if (sl !== 'auto' && sl.toLowerCase() === tl.toLowerCase()) {
+    return text;
+  }
+  
+  // 1. Primary: Google Translate Client
   try {
-    const url = `https://translate.googleapis.com/translate_a/single?client=dict-chrome-ex&sl=auto&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`;
+    const url = `https://translate.googleapis.com/translate_a/single?client=dict-chrome-ex&sl=${encodeURIComponent(sl)}&tl=${encodeURIComponent(tl)}&dt=t&q=${encodeURIComponent(text)}`;
     const response = await fetch(url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -31,7 +39,8 @@ async function translateSingleText(text: string, targetLang: string): Promise<st
 
   // 2. Secondary Fallback: MyMemory API
   try {
-    const fallbackUrl = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=auto|${targetLang}`;
+    const fallbackPair = `${sl === 'auto' ? 'auto' : sl}|${tl}`;
+    const fallbackUrl = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${encodeURIComponent(fallbackPair)}`;
     const fallbackResponse = await fetch(fallbackUrl);
     if (fallbackResponse.ok) {
       const fallbackData = await fallbackResponse.json();
@@ -48,7 +57,7 @@ async function translateSingleText(text: string, targetLang: string): Promise<st
 
 export async function POST(req: NextRequest) {
   try {
-    const { elements, targetLanguage, scriptTitle } = await req.json();
+    const { elements, sourceLanguage = 'auto', targetLanguage, scriptTitle } = await req.json();
 
     if (!elements || !Array.isArray(elements)) {
       return NextResponse.json({ error: 'Invalid script elements array' }, { status: 400 });
@@ -57,6 +66,9 @@ export async function POST(req: NextRequest) {
     if (!targetLanguage) {
       return NextResponse.json({ error: 'Target language is required' }, { status: 400 });
     }
+
+    const sl = sourceLanguage || 'auto';
+    const tl = targetLanguage;
 
     // Batch translate all script elements concurrently in chunks of 5 to respect rate limits
     const chunkSize = 5;
@@ -67,7 +79,7 @@ export async function POST(req: NextRequest) {
       const translatedChunk = await Promise.all(
         chunk.map(async (el: ScriptElement) => {
           // Keep element structure, id, type, color, highlight, font formatting exact
-          const translatedText = await translateSingleText(el.text, targetLanguage);
+          const translatedText = await translateSingleText(el.text, sl, tl);
           return {
             ...el,
             text: translatedText,
@@ -79,12 +91,13 @@ export async function POST(req: NextRequest) {
 
     let translatedTitle = scriptTitle;
     if (scriptTitle && scriptTitle.trim()) {
-      translatedTitle = await translateSingleText(scriptTitle, targetLanguage);
+      translatedTitle = await translateSingleText(scriptTitle, sl, tl);
     }
 
     return NextResponse.json({
       success: true,
-      targetLanguage,
+      sourceLanguage: sl,
+      targetLanguage: tl,
       translatedTitle,
       translatedElements,
     });
