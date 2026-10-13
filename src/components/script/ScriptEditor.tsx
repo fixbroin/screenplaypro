@@ -39,8 +39,10 @@ import {
   Languages,
   Sparkles,
   Copy,
-  ArrowRightLeft
+  ArrowRightLeft,
+  HelpCircle
 } from "lucide-react";
+import { GuidedTourOverlay, GuidedTourStep } from "./GuidedTourOverlay";
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
 import { nanoid } from "nanoid";
@@ -149,6 +151,212 @@ export function ScriptEditor({ id: propId }: { id?: string }) {
   const { toast } = useToast();
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const editorRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
+
+  // Guided Tour state & refs (Place 2: Editor Tour, Place 3: Side Script Tools Tour)
+  const [isEditorTourOpen, setIsEditorTourOpen] = useState(false);
+  const [isToolsTourOpen, setIsToolsTourOpen] = useState(false);
+
+  const titleSaveRef = useRef<HTMLDivElement | null>(null);
+  const translateBtnRef = useRef<HTMLButtonElement | null>(null);
+  const shareBtnRef = useRef<HTMLButtonElement | null>(null);
+  const pdfBtnRef = useRef<HTMLButtonElement | null>(null);
+  const settingsBtnRef = useRef<HTMLButtonElement | null>(null);
+  const desktopToolsPanelRef = useRef<HTMLDivElement | null>(null);
+  const mobileToolsTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const addBottomElementBtnRef = useRef<HTMLButtonElement | null>(null);
+
+  // Script Tools Tour target refs (both Desktop panel and Mobile dialog)
+  const desktopAddBtnRef = useRef<HTMLButtonElement | null>(null);
+  const desktopDeleteBtnRef = useRef<HTMLButtonElement | null>(null);
+  const desktopTypeBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+
+  const mobileAddBtnRef = useRef<HTMLButtonElement | null>(null);
+  const mobileDeleteBtnRef = useRef<HTMLButtonElement | null>(null);
+  const mobileTypeBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+
+  useEffect(() => {
+    if (loading || authLoading || !script) return;
+    try {
+      const seen = localStorage.getItem("screenplay_seen_editor_tour_v1");
+      if (seen !== "true") {
+        const timer = setTimeout(() => {
+          setIsEditorTourOpen(true);
+        }, 650);
+        return () => clearTimeout(timer);
+      }
+    } catch {}
+  }, [loading, authLoading, script?.id]);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    try {
+      const seen = localStorage.getItem("screenplay_seen_tools_tour_v1");
+      if (seen !== "true") {
+        const timer = setTimeout(() => {
+          setIsToolsTourOpen(true);
+        }, 350);
+        return () => clearTimeout(timer);
+      }
+    } catch {}
+  }, [mobileMenuOpen]);
+
+  const markEditorTourSeen = () => {
+    setIsEditorTourOpen(false);
+    try {
+      localStorage.setItem("screenplay_seen_editor_tour_v1", "true");
+    } catch {}
+  };
+
+  const markToolsTourSeen = () => {
+    setIsToolsTourOpen(false);
+    try {
+      localStorage.setItem("screenplay_seen_tools_tour_v1", "true");
+    } catch {}
+  };
+
+  const maybeStartDesktopToolsTourOnFirstUse = () => {
+    try {
+      const seen = localStorage.getItem("screenplay_seen_tools_tour_v1");
+      if (seen !== "true" && !isEditorTourOpen && !isToolsTourOpen) {
+        setIsToolsTourOpen(true);
+      }
+    } catch {}
+  };
+
+  const editorTourSteps: GuidedTourStep[] = [
+    {
+      getTarget: () => titleSaveRef.current,
+      title: "Auto-Saving",
+      message: "Your screenplay is automatically saved as you write. Your progress is always safe.",
+      placement: "bottom",
+      borderRadius: 10,
+    },
+    {
+      getTarget: () => translateBtnRef.current,
+      title: "Any-to-Any Translate",
+      message: "Translate your screenplay between Telugu, Hindi, English, Kannada, Marathi, Tamil, and world languages in one tap.",
+      placement: "bottom",
+      borderRadius: 10,
+    },
+    {
+      getTarget: () => shareBtnRef.current,
+      title: "Share Screenplay",
+      message: "Tap here to share your screenplay with other writers or production crew instantly.",
+      placement: "bottom",
+      borderRadius: 10,
+    },
+    {
+      getTarget: () => pdfBtnRef.current,
+      title: "Export PDF",
+      message: "Export your screenplay as a clean, professionally formatted PDF file.",
+      placement: "bottom",
+      borderRadius: 10,
+    },
+    {
+      getTarget: () => settingsBtnRef.current,
+      title: "Global Settings",
+      message: "Adjust formatting, toggle visual labels, or switch the editor font family here.",
+      placement: "bottom",
+      borderRadius: 16,
+    },
+    {
+      getTarget: () => {
+        if (typeof window !== "undefined" && window.innerWidth >= 1280 && desktopToolsPanelRef.current) {
+          return desktopToolsPanelRef.current;
+        }
+        return mobileToolsTriggerRef.current || desktopToolsPanelRef.current;
+      },
+      title: "Script Tools Drawer",
+      message: "Use Script Tools to add or delete blocks and switch between character names, scene headings, notes, transitions, and block types.",
+      placement: "left",
+      borderRadius: 20,
+    },
+    {
+      getTarget: () => addBottomElementBtnRef.current,
+      title: "Continue Writing",
+      message: "Tap here to add a new script block (Dialogue, Action, Character, etc.) and keep writing!",
+      placement: "top",
+      borderRadius: 24,
+      onShow: () => {
+        addBottomElementBtnRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      },
+    },
+  ];
+
+  const getToolsTarget = (
+    mobileEl: HTMLElement | null | undefined,
+    desktopEl: HTMLElement | null | undefined
+  ): HTMLElement | null => {
+    if (mobileMenuOpen && mobileEl) return mobileEl;
+    if (desktopEl && desktopEl.getBoundingClientRect().width > 0) return desktopEl;
+    return mobileEl || desktopEl || null;
+  };
+
+  const toolsTourSteps: GuidedTourStep[] = [
+    {
+      getTarget: () => getToolsTarget(mobileAddBtnRef.current, desktopAddBtnRef.current),
+      title: "Add Block",
+      message: "Adds a new script element immediately after the currently active element.",
+      placement: "auto",
+      borderRadius: 16,
+    },
+    {
+      getTarget: () => getToolsTarget(mobileDeleteBtnRef.current, desktopDeleteBtnRef.current),
+      title: "Delete Block",
+      message: "Deletes the currently active script element from your screenplay.",
+      placement: "auto",
+      borderRadius: 16,
+    },
+    {
+      getTarget: () => getToolsTarget(mobileTypeBtnRefs.current["scene-heading"], desktopTypeBtnRefs.current["scene-heading"]),
+      title: "Scene Heading",
+      message: "Establishes a new scene with its location and time of day (e.g. INT. COFFEE SHOP - DAY).",
+      placement: "auto",
+      borderRadius: 14,
+    },
+    {
+      getTarget: () => getToolsTarget(mobileTypeBtnRefs.current["action"], desktopTypeBtnRefs.current["action"]),
+      title: "Action Description",
+      message: "Describes character movements, descriptions, scene settings, and audible sound effects.",
+      placement: "auto",
+      borderRadius: 14,
+    },
+    {
+      getTarget: () => getToolsTarget(mobileTypeBtnRefs.current["character"], desktopTypeBtnRefs.current["character"]),
+      title: "Character Name",
+      message: "Introduces the character who is speaking. Standard formatting centers and capitalizes this name block.",
+      placement: "auto",
+      borderRadius: 14,
+    },
+    {
+      getTarget: () => getToolsTarget(mobileTypeBtnRefs.current["dialogue"], desktopTypeBtnRefs.current["dialogue"]),
+      title: "Dialogue Block",
+      message: "Displays the spoken words of the character. Positioned directly under their name block.",
+      placement: "auto",
+      borderRadius: 14,
+    },
+    {
+      getTarget: () => getToolsTarget(mobileTypeBtnRefs.current["parenthetical"], desktopTypeBtnRefs.current["parenthetical"]),
+      title: "Parenthetical Context",
+      message: "Specifies character actions or vocal delivery (e.g., whispering, smiling) during dialogue.",
+      placement: "auto",
+      borderRadius: 14,
+    },
+    {
+      getTarget: () => getToolsTarget(mobileTypeBtnRefs.current["transition"], desktopTypeBtnRefs.current["transition"]),
+      title: "Transitions",
+      message: "Indicates editorial cuts or visual cues (e.g. CUT TO:, FADE OUT.) placed on the right margin.",
+      placement: "auto",
+      borderRadius: 14,
+    },
+    {
+      getTarget: () => getToolsTarget(mobileTypeBtnRefs.current["note"], desktopTypeBtnRefs.current["note"]),
+      title: "Notes & Loglines",
+      message: "Add annotations, reminders, or script loglines. Notes are ignored when compiling PDF drafts.",
+      placement: "auto",
+      borderRadius: 14,
+    },
+  ];
 
   const handleSwapLanguages = () => {
     if (selectedSourceLang === 'auto') {
@@ -556,57 +764,88 @@ export function ScriptEditor({ id: propId }: { id?: string }) {
 
   return (
     <div className="min-h-screen bg-background flex flex-col transition-colors duration-300 relative">
-      <header className="sticky top-0 z-30 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-2 py-3">
-        <div className="container mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-4">
+      <header className="sticky top-0 z-30 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-2 sm:px-4 py-1.5 sm:py-2.5">
+        <div className="w-full max-w-7xl mx-auto flex items-center justify-between gap-2.5 sm:gap-4">
+          <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0 shrink">
             <Link href="/script-writing">
-              <Button variant="ghost" size="icon" className="text-foreground hover:bg-muted">
-                <ArrowLeft className="h-4 w-4" />
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-7 w-7 sm:h-8 sm:w-8 text-foreground hover:bg-primary hover:text-primary-foreground shrink-0 transition-colors"
+              >
+                <ArrowLeft className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
               </Button>
             </Link>
-            <div>
-              <h1 className="font-semibold text-sm md:text-base truncate max-w-[150px] md:max-w-[300px] text-foreground">
+            <div ref={titleSaveRef} className="px-0.5 sm:px-1 py-0.5 rounded-lg min-w-0 max-w-[75px] xs:max-w-[120px] sm:max-w-[200px] md:max-w-[320px]">
+              <h1 className="font-bold text-[11px] sm:text-sm md:text-base truncate text-foreground leading-tight">
                 {script.title}
               </h1>
-              <div className="text-[10px] text-muted-foreground flex items-center gap-1">
+              <div className="text-[9px] sm:text-[10px] text-muted-foreground flex items-center gap-0.5 sm:gap-1 mt-0.5 font-medium">
                 {saving ? (
                   <>
-                    <Loader2 className="h-2 w-2 animate-spin" /> Saving...
+                    <Loader2 className="h-2 w-2 sm:h-2.5 sm:w-2.5 animate-spin shrink-0" /> 
+                    <span className="truncate">Saving...</span>
                   </>
                 ) : (
                   <>
-                    <Save className="h-2 w-2" /> Saved
+                    <Save className="h-2 w-2 sm:h-2.5 sm:w-2.5 shrink-0" /> 
+                    <span className="truncate">Saved</span>
                   </>
                 )}
               </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-1 sm:gap-2">
+          <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 ml-1">
             <Button 
+              ref={translateBtnRef}
               variant="outline" 
               size="sm" 
-              className="h-8 px-2 sm:px-3 gap-1 sm:gap-2 border-emerald-600 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 text-[10px] sm:text-xs font-bold" 
+              className="h-7 sm:h-8 px-1.5 sm:px-2.5 gap-1 border-emerald-600 bg-background text-emerald-700 dark:text-emerald-400 hover:bg-emerald-600 hover:text-white dark:hover:bg-emerald-600 dark:hover:text-white text-[9.5px] sm:text-xs font-bold transition-all shadow-sm" 
               onClick={() => setTranslateDialogOpen(true)}
             >
-              <Languages className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-              <span className="hidden xs:inline">Translate</span>
+              <Languages className="h-3 w-3 sm:h-3.5 sm:w-3.5 shrink-0" />
+              <span>Translate</span>
             </Button>
-            <Button variant="outline" size="sm" className="h-8 px-2 sm:px-3 gap-1 sm:gap-2 border-primary text-primary hover:bg-primary/10 text-[10px] sm:text-xs" onClick={() => setShareDialogOpen(true)}>
-              <Share2 className="h-3 w-3 sm:h-4 sm:w-4" /> <span className="hidden xs:inline">Share</span>
+            <Button
+              ref={shareBtnRef}
+              variant="outline"
+              size="sm"
+              className="h-7 sm:h-8 px-1.5 sm:px-2.5 gap-1 border-primary bg-background text-primary hover:bg-primary hover:text-primary-foreground text-[9.5px] sm:text-xs font-bold transition-all shadow-sm"
+              onClick={() => setShareDialogOpen(true)}
+            >
+              <Share2 className="h-3 w-3 sm:h-3.5 sm:w-3.5 shrink-0" />
+              <span className="hidden min-[360px]:inline">Share</span>
             </Button>
             <Button 
-              variant="outline" 
+              ref={pdfBtnRef}
+              variant="default" 
               size="sm" 
-              className="h-8 px-2 sm:px-3 gap-1 sm:gap-2 bg-primary text-primary-foreground hover:bg-primary/90 border-none text-[10px] sm:text-xs" 
+              className="h-7 sm:h-8 px-1.5 sm:px-2.5 gap-1 bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground text-[9.5px] sm:text-xs font-bold transition-all shadow-sm" 
               onClick={handleExportPDF}
               disabled={isExporting}
             >
-              {isExporting ? <Loader2 className="h-3 w-3 sm:h-4 sm:w-4 animate-spin" /> : <Download className="h-3 w-3 sm:h-4 sm:w-4" />}
-              <span className="hidden xs:inline">{isExporting ? 'Generating...' : 'PDF'}</span>
+              {isExporting ? <Loader2 className="h-3 w-3 sm:h-3.5 sm:w-3.5 animate-spin shrink-0" /> : <Download className="h-3 w-3 sm:h-3.5 sm:w-3.5 shrink-0" />}
+              <span>{isExporting ? '...' : 'PDF'}</span>
             </Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-foreground hover:bg-muted" onClick={() => setSettingsDialogOpen(true)}>
-              <Settings className="h-4 w-4" />
+            <Button
+              ref={settingsBtnRef}
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 sm:h-8 sm:w-8 text-foreground hover:bg-primary hover:text-primary-foreground transition-colors shrink-0"
+              onClick={() => setSettingsDialogOpen(true)}
+              title="Global Settings"
+            >
+              <Settings className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 sm:h-8 sm:w-8 text-foreground hover:bg-primary hover:text-primary-foreground transition-colors shrink-0"
+              onClick={() => setIsEditorTourOpen(true)}
+              title="Start Editor Guided Tour"
+            >
+              <HelpCircle className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             </Button>
           </div>
         </div>
@@ -614,22 +853,41 @@ export function ScriptEditor({ id: propId }: { id?: string }) {
 
       {/* DESKTOP FIXED SIDE PANEL (FAR RIGHT) */}
       {canEdit && (
-        <div className="hidden xl:flex fixed right-8 top-1/2 -translate-y-1/2 flex-col gap-4 z-50 transition-all">
-          <div className="bg-card border border-border p-5 rounded-[2.5rem] shadow-2xl flex flex-col gap-2 items-stretch min-w-[180px]">
-            <p className="text-[10px] font-black text-primary uppercase tracking-[0.2em] mb-4 text-center">Script Tools</p>
+        <div className="hidden xl:flex fixed right-8 top-1/2 -translate-y-1/2 flex-col gap-4 z-40 transition-all">
+          <div
+            ref={desktopToolsPanelRef}
+            onClickCapture={maybeStartDesktopToolsTourOnFirstUse}
+            className="bg-card border border-border p-5 rounded-[2.5rem] shadow-2xl flex flex-col gap-2 items-stretch min-w-[190px]"
+          >
+            <div className="flex items-center justify-between mb-3 px-1">
+              <p className="text-[10px] font-black text-primary uppercase tracking-[0.2em]">Script Tools</p>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsToolsTourOpen(true);
+                }}
+                className="text-muted-foreground hover:text-primary transition-colors p-1 rounded-full hover:bg-muted"
+                title="Script Tools Tour"
+              >
+                <HelpCircle className="h-3.5 w-3.5" />
+              </button>
+            </div>
             
             <div className="flex gap-2 mb-4 items-center">
               <Button 
+                ref={desktopAddBtnRef}
                 variant="default" 
-                className="flex-1 h-12 rounded-2xl shadow-md gap-2 font-bold"
+                className="flex-1 h-12 rounded-2xl shadow-md gap-2 font-bold bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground"
                 onClick={handleAddElement}
               >
                 <Plus className="h-5 w-5" /> Add
               </Button>
               <Button 
+                ref={desktopDeleteBtnRef}
                 variant="destructive" 
                 size="icon" 
-                className="h-12 w-12 rounded-2xl shadow-md"
+                className="h-12 w-12 rounded-2xl shadow-md bg-destructive text-destructive-foreground hover:bg-destructive/90 hover:text-destructive-foreground"
                 onClick={handleRemoveElement}
               >
                 <Trash2 className="h-5 w-5" />
@@ -637,72 +895,118 @@ export function ScriptEditor({ id: propId }: { id?: string }) {
             </div>
 
             <p className="text-[9px] font-bold text-muted-foreground uppercase mb-2 px-2">Change Type</p>
-            {Object.entries(ELEMENT_LABELS).map(([type, label]) => (
-              <Button 
-                key={type} 
-                variant={activeElementId && script.content.find(el => el.id === activeElementId)?.type === type ? "default" : "secondary"}
-                size="sm"
-                className={`justify-start gap-3 h-10 px-4 rounded-xl transition-all hover:translate-x-[-4px] shadow-sm ${activeElementId && script.content.find(el => el.id === activeElementId)?.type === type ? 'ring-2 ring-primary ring-offset-2 ring-offset-background' : ''}`}
-                onClick={() => activeElementId && handleElementChange(activeElementId, { type: type as ScriptElementType })}
-              >
-                <div className={`w-2 h-2 rounded-full ${activeElementId && script.content.find(el => el.id === activeElementId)?.type === type ? 'bg-primary-foreground' : 'bg-primary'}`}></div>
-                <span className="text-[11px] font-bold uppercase truncate">{label}</span>
-              </Button>
-            ))}
+            {Object.entries(ELEMENT_LABELS).map(([type, label]) => {
+              const isActive = activeElementId && script.content.find(el => el.id === activeElementId)?.type === type;
+              return (
+                <Button 
+                  key={type} 
+                  ref={(el) => { desktopTypeBtnRefs.current[type] = el; }}
+                  variant="ghost"
+                  size="sm"
+                  className={`justify-start gap-3 h-10 px-4 rounded-xl transition-all shadow-sm ${
+                    isActive 
+                      ? 'bg-primary text-primary-foreground font-black ring-2 ring-primary ring-offset-2 ring-offset-background hover:bg-primary hover:text-primary-foreground' 
+                      : 'bg-secondary/60 text-secondary-foreground font-bold hover:bg-primary hover:text-primary-foreground'
+                  }`}
+                  onClick={() => activeElementId && handleElementChange(activeElementId, { type: type as ScriptElementType })}
+                >
+                  <div className={`w-2 h-2 rounded-full ${isActive ? 'bg-primary-foreground' : 'bg-primary'}`}></div>
+                  <span className="text-[11px] uppercase truncate">{label}</span>
+                </Button>
+              );
+            })}
           </div>
         </div>
       )}
 
       {/* MOBILE POPUP MENU (TRIGGERED FROM SIDE) */}
       {canEdit && (
-        <div className="xl:hidden fixed right-0 top-1/2 -translate-y-1/2 z-50">
-          <Dialog open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+        <div className="xl:hidden fixed right-0 top-1/2 -translate-y-1/2 z-40">
+          <Dialog
+            open={mobileMenuOpen}
+            onOpenChange={(open) => {
+              if (!open && isToolsTourOpen) return;
+              setMobileMenuOpen(open);
+            }}
+          >
             <DialogTrigger asChild>
               <Button 
+                ref={mobileToolsTriggerRef}
                 size="icon" 
                 className="h-14 w-8 rounded-l-2xl rounded-r-none shadow-2xl bg-primary text-primary-foreground hover:w-10 transition-all flex items-center justify-center pl-1"
               >
                 <ChevronLeft className="h-6 w-6" />
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-[90vw] sm:max-w-md rounded-[2.5rem] p-8 border-none shadow-2xl">
+            <DialogContent
+              onPointerDownOutside={(e) => {
+                if (isToolsTourOpen) e.preventDefault();
+              }}
+              onInteractOutside={(e) => {
+                if (isToolsTourOpen) e.preventDefault();
+              }}
+              onEscapeKeyDown={(e) => {
+                if (isToolsTourOpen) e.preventDefault();
+              }}
+              className="w-[92vw] max-w-[92vw] sm:max-w-md rounded-[2rem] sm:rounded-[2.5rem] p-6 sm:p-8 border-none shadow-2xl bg-card text-card-foreground"
+            >
               <DialogHeader>
-                <DialogTitle className="text-primary text-2xl font-black uppercase tracking-tighter text-center">Script Menu</DialogTitle>
-                <DialogDescription className="text-center">Manage your screenplay elements and actions.</DialogDescription>
+                <div className="flex items-center justify-center gap-2">
+                  <DialogTitle className="text-primary text-xl sm:text-2xl font-black uppercase tracking-tighter text-center">Script Menu</DialogTitle>
+                  <button
+                    type="button"
+                    onClick={() => setIsToolsTourOpen(true)}
+                    className="text-muted-foreground hover:text-primary transition-colors p-1 rounded-full hover:bg-muted"
+                    title="Script Tools Tour"
+                  >
+                    <HelpCircle className="h-4 w-4" />
+                  </button>
+                </div>
+                <DialogDescription className="text-center text-xs sm:text-sm">Manage your screenplay elements and actions.</DialogDescription>
               </DialogHeader>
               
-              <div className="grid gap-6 mt-8">
+              <div className="grid gap-4 sm:gap-6 mt-4 sm:mt-6 min-w-0">
                 <div className="grid grid-cols-2 gap-3">
                   <Button 
+                    ref={mobileAddBtnRef}
                     variant="default" 
-                    className="h-16 rounded-2xl font-black text-base shadow-lg gap-3"
+                    className="h-14 sm:h-16 rounded-2xl font-black text-sm sm:text-base shadow-lg gap-2 sm:gap-3 bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground"
                     onClick={handleAddElement}
                   >
-                    <Plus className="h-6 w-6" /> Add
+                    <Plus className="h-5 w-5 sm:h-6 sm:w-6" /> Add
                   </Button>
                   <Button 
+                    ref={mobileDeleteBtnRef}
                     variant="destructive" 
-                    className="h-16 rounded-2xl font-black text-base shadow-lg gap-3"
+                    className="h-14 sm:h-16 rounded-2xl font-black text-sm sm:text-base shadow-lg gap-2 sm:gap-3 bg-destructive text-destructive-foreground hover:bg-destructive/90 hover:text-destructive-foreground"
                     onClick={handleRemoveElement}
                   >
-                    <Trash2 className="h-6 w-6" /> Delete
+                    <Trash2 className="h-5 w-5 sm:h-6 sm:w-6" /> Delete
                   </Button>
                 </div>
 
-                <div className="h-px bg-border my-2"></div>
-                <p className="text-xs font-bold text-muted-foreground uppercase text-center mb-2">Change Block Type:</p>
+                <div className="h-px bg-border my-1"></div>
+                <p className="text-xs font-bold text-muted-foreground uppercase text-center mb-1">Change Block Type:</p>
                 
                 <div className="grid grid-cols-2 gap-2">
-                  {Object.entries(ELEMENT_LABELS).map(([type, label]) => (
-                    <Button 
-                      key={type} 
-                      variant={activeElementId && script.content.find(el => el.id === activeElementId)?.type === type ? "default" : "outline"}
-                      className={`h-12 text-xs font-bold rounded-xl ${activeElementId && script.content.find(el => el.id === activeElementId)?.type === type ? 'ring-2 ring-primary ring-offset-2' : ''}`}
-                      onClick={() => activeElementId && handleElementChange(activeElementId, { type: type as ScriptElementType })}
-                    >
-                      {label}
-                    </Button>
-                  ))}
+                  {Object.entries(ELEMENT_LABELS).map(([type, label]) => {
+                    const isActive = activeElementId && script.content.find(el => el.id === activeElementId)?.type === type;
+                    return (
+                      <Button 
+                        key={type} 
+                        ref={(el) => { mobileTypeBtnRefs.current[type] = el; }}
+                        variant="outline"
+                        className={`h-11 sm:h-12 text-xs font-bold rounded-xl transition-all ${
+                          isActive 
+                            ? 'bg-primary text-primary-foreground ring-2 ring-primary ring-offset-2 hover:bg-primary hover:text-primary-foreground' 
+                            : 'bg-background text-foreground hover:bg-primary hover:text-primary-foreground border-border'
+                        }`}
+                        onClick={() => activeElementId && handleElementChange(activeElementId, { type: type as ScriptElementType })}
+                      >
+                        {label}
+                      </Button>
+                    );
+                  })}
                 </div>
               </div>
             </DialogContent>
@@ -739,25 +1043,27 @@ export function ScriptEditor({ id: propId }: { id?: string }) {
                     <span className="uppercase tracking-tighter font-semibold">{ELEMENT_LABELS[element.type]}</span>
                     
                     {/* Styling Controls - Only visible for active element or on hover */}
-                    <div className={`flex items-center gap-2 transition-opacity ${activeElementId === element.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                    <div className={`flex items-center gap-1.5 transition-opacity ${activeElementId === element.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
                       <Button 
-                        variant="ghost" size="icon" className="h-5 w-5 hover:text-primary" 
+                        variant="ghost" size="icon" className="h-6 w-6 text-foreground hover:bg-primary hover:text-primary-foreground transition-colors" 
                         onClick={() => handleElementChange(element.id, { fontWeight: element.fontWeight === 'bold' ? 'normal' : 'bold' })}
+                        title="Bold"
                       >
                         <Bold className={`h-3 w-3 ${element.fontWeight === 'bold' ? 'text-primary' : ''}`} />
                       </Button>
                       
                       {isMobile ? (
                         <Button 
-                          variant="ghost" size="icon" className="h-5 w-5 hover:text-primary"
+                          variant="ghost" size="icon" className="h-6 w-6 text-foreground hover:bg-primary hover:text-primary-foreground transition-colors"
                           onClick={() => setColorPickerElementId(element.id)}
+                          title="Color"
                         >
                           <Palette className="h-3 w-3" />
                         </Button>
                       ) : (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-5 w-5 hover:text-primary">
+                            <Button variant="ghost" size="icon" className="h-6 w-6 text-foreground hover:bg-primary hover:text-primary-foreground transition-colors" title="Color">
                               <Palette className="h-3 w-3" />
                             </Button>
                           </DropdownMenuTrigger>
@@ -795,15 +1101,16 @@ export function ScriptEditor({ id: propId }: { id?: string }) {
 
                       {isMobile ? (
                         <Button 
-                          variant="ghost" size="icon" className="h-5 w-5 hover:text-primary"
+                          variant="ghost" size="icon" className="h-6 w-6 text-foreground hover:bg-primary hover:text-primary-foreground transition-colors"
                           onClick={() => setFontSizePickerElementId(element.id)}
+                          title="Font Size"
                         >
                           <Type className="h-3 w-3" />
                         </Button>
                       ) : (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-5 w-5 hover:text-primary">
+                            <Button variant="ghost" size="icon" className="h-6 w-6 text-foreground hover:bg-primary hover:text-primary-foreground transition-colors" title="Font Size">
                               <Type className="h-3 w-3" />
                             </Button>
                           </DropdownMenuTrigger>
@@ -818,8 +1125,9 @@ export function ScriptEditor({ id: propId }: { id?: string }) {
                       <Button 
                         variant="ghost" 
                         size="icon" 
-                        className="h-5 w-5 hover:text-primary text-muted-foreground/60" 
+                        className="h-6 w-6 text-foreground hover:bg-primary hover:text-primary-foreground transition-colors" 
                         onClick={() => setFullscreenElementId(element.id)}
+                        title="Fullscreen Focus"
                       >
                         <Maximize2 className="h-3 w-3" />
                       </Button>
@@ -828,11 +1136,12 @@ export function ScriptEditor({ id: propId }: { id?: string }) {
                         <Button 
                           variant="ghost" 
                           size="icon" 
-                          className="h-5 w-5 hover:text-destructive text-muted-foreground/60" 
+                          className="h-6 w-6 text-muted-foreground hover:bg-destructive hover:text-destructive-foreground transition-colors" 
                           onClick={() => {
                             setActiveElementId(element.id);
                             handleRemoveElement();
                           }}
+                          title="Delete Element"
                         >
                           <Trash2 className="h-3 w-3" />
                         </Button>
@@ -865,8 +1174,9 @@ export function ScriptEditor({ id: propId }: { id?: string }) {
           {canEdit && (
             <div className="mt-16 flex justify-center border-t border-dashed border-border pt-10">
                <Button 
+                 ref={addBottomElementBtnRef}
                  variant="outline" 
-                 className="gap-2 text-primary border-primary hover:bg-primary hover:text-white transition-all shadow-md px-6 py-5 rounded-full" 
+                 className="gap-2 bg-card text-primary border-2 border-primary hover:bg-primary hover:text-primary-foreground font-bold transition-all shadow-md px-8 py-5 rounded-full" 
                  onClick={handleAddElement}
                >
                  <Plus className="h-5 w-5" /> Add New Element
@@ -1057,7 +1367,11 @@ export function ScriptEditor({ id: propId }: { id?: string }) {
                   <Button
                     key={size}
                     variant={el?.fontSize === size ? "default" : "outline"}
-                    className="h-12 text-sm font-bold rounded-xl capitalize"
+                    className={`h-12 text-sm font-bold rounded-xl capitalize transition-all ${
+                      el?.fontSize === size
+                        ? 'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground'
+                        : 'bg-background text-foreground hover:bg-primary hover:text-primary-foreground'
+                    }`}
                     onClick={() => {
                       handleElementChange(fontSizePickerElementId, { fontSize: size });
                       setFontSizePickerElementId(null);
@@ -1088,7 +1402,7 @@ export function ScriptEditor({ id: propId }: { id?: string }) {
               <Button 
                 variant="ghost" 
                 size="sm" 
-                className="gap-2 px-2 text-foreground font-bold"
+                className="gap-2 px-2 text-foreground hover:bg-primary hover:text-primary-foreground font-bold transition-colors"
                 onClick={() => {
                   setFullscreenElementId(null);
                   recalculateHeights();
@@ -1101,26 +1415,26 @@ export function ScriptEditor({ id: propId }: { id?: string }) {
               </span>
               <div className="flex items-center gap-2">
                 <Button 
-                  variant="ghost" size="icon" className="h-8 w-8 hover:text-primary" 
+                  variant="ghost" size="icon" className="h-8 w-8 text-foreground hover:bg-primary hover:text-primary-foreground transition-colors" 
                   onClick={() => handleElementChange(element.id, { fontWeight: element.fontWeight === 'bold' ? 'normal' : 'bold' })}
                 >
                   <Bold className={`h-4 w-4 ${element.fontWeight === 'bold' ? 'text-primary' : ''}`} />
                 </Button>
                 <Button 
-                  variant="ghost" size="icon" className="h-8 w-8 hover:text-primary"
+                  variant="ghost" size="icon" className="h-8 w-8 text-foreground hover:bg-primary hover:text-primary-foreground transition-colors"
                   onClick={() => setColorPickerElementId(element.id)}
                 >
                   <Palette className={`h-4 w-4 ${element.color || element.highlight ? 'text-primary' : ''}`} />
                 </Button>
                 <Button 
-                  variant="ghost" size="icon" className="h-8 w-8 hover:text-primary"
+                  variant="ghost" size="icon" className="h-8 w-8 text-foreground hover:bg-primary hover:text-primary-foreground transition-colors"
                   onClick={() => setFontSizePickerElementId(element.id)}
                 >
                   <Type className={`h-4 w-4 ${element.fontSize && element.fontSize !== 'medium' ? 'text-primary' : ''}`} />
                 </Button>
                 {script.content.length > 1 && (
                   <Button 
-                    variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10"
+                    variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive hover:text-destructive-foreground transition-colors"
                     onClick={() => {
                       handleRemoveElement();
                       setFullscreenElementId(null);
@@ -1191,7 +1505,7 @@ export function ScriptEditor({ id: propId }: { id?: string }) {
                   variant="outline"
                   size="icon"
                   onClick={handleSwapLanguages}
-                  className="h-10 w-10 rounded-xl hover:bg-emerald-500/10 hover:text-emerald-600 hover:border-emerald-500/30 transition-all shadow-sm"
+                  className="h-10 w-10 rounded-xl bg-background text-emerald-700 border-emerald-600/40 hover:bg-emerald-600 hover:text-white hover:border-emerald-600 transition-all shadow-sm"
                   title="Swap languages"
                 >
                   <ArrowRightLeft className="w-4 h-4" />
@@ -1242,7 +1556,7 @@ export function ScriptEditor({ id: propId }: { id?: string }) {
                       "px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all",
                       selectedSourceLang === pair.src && selectedTargetLang === pair.tgt
                         ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
-                        : "bg-secondary/40 hover:bg-secondary border-border text-foreground/80 hover:text-foreground"
+                        : "bg-secondary/60 hover:bg-emerald-600 border-border text-foreground hover:text-white hover:border-emerald-600"
                     )}
                   >
                     {pair.label}
@@ -1296,10 +1610,10 @@ export function ScriptEditor({ id: propId }: { id?: string }) {
 
           <DialogFooter className="flex-col sm:flex-row gap-2 pt-2 min-w-0">
             <Button
-              variant="ghost"
+              variant="outline"
               onClick={() => setTranslateDialogOpen(false)}
               disabled={isTranslating}
-              className="rounded-xl font-bold w-full sm:w-auto"
+              className="rounded-xl font-bold w-full sm:w-auto bg-background text-foreground border-border hover:bg-muted hover:text-foreground"
             >
               Cancel
             </Button>
@@ -1321,6 +1635,22 @@ export function ScriptEditor({ id: propId }: { id?: string }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Place 2: Editor Screen Guided Feature Tour (Responsive Desktop & Mobile) */}
+      <GuidedTourOverlay
+        steps={editorTourSteps}
+        isOpen={isEditorTourOpen}
+        onComplete={markEditorTourSeen}
+        onSkip={markEditorTourSeen}
+      />
+
+      {/* Place 3: Side Script Tools Tour (Responsive Desktop Panel & Mobile Side Popup) */}
+      <GuidedTourOverlay
+        steps={toolsTourSteps}
+        isOpen={isToolsTourOpen}
+        onComplete={markToolsTourSeen}
+        onSkip={markToolsTourSeen}
+      />
     </div>
   );
 }

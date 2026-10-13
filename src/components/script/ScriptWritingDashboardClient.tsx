@@ -7,7 +7,7 @@ import { getUserScripts, createScript, deleteScript } from "@/lib/scriptUtils";
 import { Script } from "@/types/script";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Plus, Edit, Trash2, Download, FileText, Loader2, ArrowLeft, PenTool, Sparkles, BookOpen, Printer, Share2 } from "lucide-react";
+import { Plus, Edit, Trash2, Download, FileText, Loader2, ArrowLeft, PenTool, Sparkles, BookOpen, Printer, Share2, X, HelpCircle } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
@@ -36,6 +36,8 @@ export default function ScriptWritingDashboardClient() {
   const [scripts, setScripts] = useState<Script[]>([]);
   const [loading, setLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [showDashboardTooltip, setShowDashboardTooltip] = useState(false);
   const [newScriptTitle, setNewScriptTitle] = useState("");
   const [newScriptDesc, setNewScriptDesc] = useState("");
   const [newScriptWrittenBy, setNewScriptWrittenBy] = useState("");
@@ -52,6 +54,26 @@ export default function ScriptWritingDashboardClient() {
       setLoading(false);
     }
   }, [user, authLoading]);
+
+  useEffect(() => {
+    if (!user || loading) return;
+    const timer = setTimeout(() => {
+      setShowDashboardTooltip(true);
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [user, loading]);
+
+  const handleResetTutorials = () => {
+    try {
+      localStorage.removeItem("screenplay_seen_editor_tour_v1");
+      localStorage.removeItem("screenplay_seen_tools_tour_v1");
+    } catch {}
+    setShowDashboardTooltip(true);
+    toast({
+      title: "Tutorials Reset",
+      description: "Dashboard, Editor, and Script Tools tooltips will now show again.",
+    });
+  };
 
   const handleExportPDF = async (script: Script) => {
     if (!user) {
@@ -309,73 +331,124 @@ export default function ScriptWritingDashboardClient() {
           <p className="text-muted-foreground mt-2">Write and manage your movie scripts with ease.</p>
         </div>
         
-        <Dialog>
-          <DialogTrigger asChild>
-            <Button className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90 shadow-md">
-              <Plus className="h-5 w-5" /> Create New Script
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="bg-card text-card-foreground border-border">
-            <DialogHeader>
-              <DialogTitle className="text-2xl">Create New Script</DialogTitle>
-              <DialogDescription className="text-muted-foreground">
-                Give your new screenplay a title and optional description.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-6 py-6">
-              <div className="grid gap-2">
-                <Label htmlFor="title" className="text-foreground">Title</Label>
-                <Input 
-                  id="title" 
-                  placeholder="e.g. The Midnight Heist" 
-                  value={newScriptTitle}
-                  onChange={(e) => setNewScriptTitle(e.target.value)}
-                  className="bg-background border-border text-foreground focus:ring-primary"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="writtenBy" className="text-foreground">Written by</Label>
-                <Input 
-                  id="writtenBy" 
-                  placeholder="Your Name" 
-                  value={newScriptWrittenBy}
-                  onChange={(e) => setNewScriptWrittenBy(e.target.value)}
-                  className="bg-background border-border text-foreground focus:ring-primary"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="description" className="text-foreground">Description (Optional)</Label>
-                <Input 
-                  id="description" 
-                  placeholder="A short logline or summary..." 
-                  value={newScriptDesc}
-                  onChange={(e) => setNewScriptDesc(e.target.value)}
-                  className="bg-background border-border text-foreground focus:ring-primary"
-                />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button 
-                variant="outline" 
-                onClick={() => {
-                  setNewScriptTitle("");
-                  setNewScriptDesc("");
-                }}
-                className="border-border text-foreground hover:bg-muted"
+        <div className="flex items-center gap-2 relative">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleResetTutorials}
+            className="gap-1.5 text-xs bg-background text-foreground hover:bg-primary hover:text-primary-foreground border-border h-10 transition-colors"
+            title="Replay Guided Tooltips & Tour"
+          >
+            <HelpCircle className="h-4 w-4" />
+            <span className="hidden sm:inline">Reset Tutorials</span>
+          </Button>
+
+          <div className="relative inline-block">
+            <Dialog
+              open={createDialogOpen}
+              onOpenChange={(open) => {
+                setCreateDialogOpen(open);
+                if (open) setShowDashboardTooltip(false);
+              }}
+            >
+              <DialogTrigger asChild>
+                <Button className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground shadow-md">
+                  <Plus className="h-5 w-5" /> Create New Script
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="bg-card text-card-foreground border-border">
+                <DialogHeader>
+                  <DialogTitle className="text-2xl">Create New Script</DialogTitle>
+                  <DialogDescription className="text-muted-foreground">
+                    Give your new screenplay a title and optional description.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="grid gap-6 py-6">
+                  <div className="grid gap-2">
+                    <Label htmlFor="title" className="text-foreground">Title</Label>
+                    <Input 
+                      id="title" 
+                      placeholder="e.g. The Midnight Heist" 
+                      value={newScriptTitle}
+                      onChange={(e) => setNewScriptTitle(e.target.value)}
+                      className="bg-background border-border text-foreground focus:ring-primary"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="writtenBy" className="text-foreground">Written by</Label>
+                    <Input 
+                      id="writtenBy" 
+                      placeholder="Your Name" 
+                      value={newScriptWrittenBy}
+                      onChange={(e) => setNewScriptWrittenBy(e.target.value)}
+                      className="bg-background border-border text-foreground focus:ring-primary"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="description" className="text-foreground">Description (Optional)</Label>
+                    <Input 
+                      id="description" 
+                      placeholder="A short logline or summary..." 
+                      value={newScriptDesc}
+                      onChange={(e) => setNewScriptDesc(e.target.value)}
+                      className="bg-background border-border text-foreground focus:ring-primary"
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => {
+                      setNewScriptTitle("");
+                      setNewScriptDesc("");
+                      setCreateDialogOpen(false);
+                    }}
+                    className="border-border bg-background text-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    Cancel
+                  </Button>
+                  <Button 
+                    onClick={handleCreateScript} 
+                    disabled={!newScriptTitle.trim() || isCreating}
+                    className="bg-primary text-primary-foreground hover:bg-primary/90"
+                  >
+                    {isCreating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    Create
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+
+            {/* Floating Dashboard Tooltip (matches Flutter app CustomTooltip) */}
+            {showDashboardTooltip && !createDialogOpen && (
+              <div
+                onClick={() => setShowDashboardTooltip(false)}
+                className="absolute top-full mt-2.5 left-0 md:left-auto md:right-0 z-20 w-max max-w-[260px] sm:max-w-[290px] cursor-pointer select-none animate-in fade-in zoom-in-95 duration-200"
               >
-                Cancel
-              </Button>
-              <Button 
-                onClick={handleCreateScript} 
-                disabled={!newScriptTitle.trim() || isCreating}
-                className="bg-primary text-primary-foreground hover:bg-primary/90"
-              >
-                {isCreating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Create
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+                {/* Upward Pointer Triangle */}
+                <div className="w-3 h-3 bg-[#0F172A] rotate-45 absolute -top-1.5 left-8 md:left-auto md:right-8 rounded-[2px]" />
+                <div className="relative bg-[#0F172A] text-white px-3.5 py-2.5 rounded-xl shadow-[0_8px_20px_rgba(0,0,0,0.28)] flex items-center gap-2.5 border border-slate-800">
+                  <span className="text-[13px] font-semibold tracking-tight leading-snug">
+                    {scripts.length === 0
+                      ? "Click here to write your first screenplay!"
+                      : "Start your new project!"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowDashboardTooltip(false);
+                    }}
+                    className="w-5 h-5 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center shrink-0 transition-colors"
+                    aria-label="Dismiss tooltip"
+                  >
+                    <X className="w-3 h-3 text-white/90" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {scripts.length === 0 ? (
