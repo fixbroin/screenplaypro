@@ -427,7 +427,7 @@ export default function PopupDisplayManager() {
   return (
     <Dialog open={isPopupVisible} onOpenChange={(open) => { if (!open) handlePopupClose(); }}>
       <DialogContent className={cn(
-        "max-w-[90%] sm:max-w-md md:max-w-lg p-0 overflow-hidden shadow-2xl rounded-xl transition-all duration-300",
+        "max-w-[90%] sm:max-w-md md:max-w-lg max-h-[90vh] max-h-[90dvh] overflow-y-auto overscroll-contain p-0 shadow-2xl rounded-xl transition-all duration-300",
         isInputFocused ? "!-translate-y-[85%] sm:!-translate-y-[50%] top-[50%]" : ""
       )}>
         {currentPopupToDisplay.showCloseButton !== false && (

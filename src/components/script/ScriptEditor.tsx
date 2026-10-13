@@ -1151,20 +1151,20 @@ export function ScriptEditor({ id: propId }: { id?: string }) {
         );
       })()}
       <Dialog open={translateDialogOpen} onOpenChange={setTranslateDialogOpen}>
-        <DialogContent className="max-w-xl sm:rounded-3xl p-6 border shadow-2xl">
+        <DialogContent className="w-[92vw] max-w-xl max-h-[90vh] max-h-[90dvh] overflow-y-auto overscroll-contain rounded-2xl sm:rounded-3xl p-5 sm:p-6 border shadow-2xl">
           <DialogHeader>
-            <div className="mx-auto w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-600 mb-3">
-              <Languages className="w-6 h-6" />
+            <div className="mx-auto w-11 h-11 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-600 mb-2">
+              <Languages className="w-5 h-5" />
             </div>
-            <DialogTitle className="text-2xl font-black tracking-tight text-center">
+            <DialogTitle className="text-xl sm:text-2xl font-black tracking-tight text-center">
               Any-to-Any Script Translator
             </DialogTitle>
-            <DialogDescription className="text-center text-muted-foreground text-sm mt-1">
+            <DialogDescription className="text-center text-muted-foreground text-xs sm:text-sm mt-1">
               Translate your screenplay between any languages (Telugu, Hindi, English, Kannada, Marathi, Tamil, and world languages) with formatting preserved.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 my-3">
+          <div className="space-y-4 my-2">
             {/* From - Swap - To Language Selector */}
             <div className="flex flex-col sm:flex-row items-center gap-2">
               <div className="w-full sm:flex-1">
@@ -1191,7 +1191,7 @@ export function ScriptEditor({ id: propId }: { id?: string }) {
                   variant="outline"
                   size="icon"
                   onClick={handleSwapLanguages}
-                  className="h-10 w-10 rounded-xl hover:bg-emerald-500/10 hover:text-emerald-600 hover:border-emerald-500/30 transition-all shadow-sm"
+                  className="h-9 w-9 sm:h-10 sm:w-10 rounded-xl hover:bg-emerald-500/10 hover:text-emerald-600 hover:border-emerald-500/30 transition-all shadow-sm"
                   title="Swap languages"
                 >
                   <ArrowRightLeft className="w-4 h-4" />
@@ -1217,12 +1217,12 @@ export function ScriptEditor({ id: propId }: { id?: string }) {
               </div>
             </div>
 
-            {/* Quick Presets */}
-            <div className="space-y-1.5 pt-1">
+            {/* Quick Presets - Horizontally Scrollable */}
+            <div className="space-y-1.5 pt-1 overflow-hidden">
               <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground block">
-                Popular Language Pairs:
+                Popular Language Pairs (Swipe →):
               </span>
-              <div className="flex flex-wrap gap-1.5">
+              <div className="flex items-center gap-2 overflow-x-auto pb-1.5 whitespace-nowrap">
                 {[
                   { label: 'English → Telugu', src: 'en', tgt: 'te' },
                   { label: 'Telugu → English', src: 'te', tgt: 'en' },
@@ -1239,7 +1239,7 @@ export function ScriptEditor({ id: propId }: { id?: string }) {
                     type="button"
                     onClick={() => handleQuickPairSelect(pair.src, pair.tgt)}
                     className={cn(
-                      "px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all",
+                      "shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all",
                       selectedSourceLang === pair.src && selectedTargetLang === pair.tgt
                         ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
                         : "bg-secondary/40 hover:bg-secondary border-border text-foreground/80 hover:text-foreground"
@@ -1269,7 +1269,7 @@ export function ScriptEditor({ id: propId }: { id?: string }) {
                 >
                   <div className="flex items-center justify-between w-full">
                     <span className="text-xs font-bold">Translate Current</span>
-                    {translateMode === 'replace' && <Check className="w-4 h-4 text-emerald-600" />}
+                    {translateMode === 'replace' && <Check className="w-4 h-4 text-emerald-600 shrink-0" />}
                   </div>
                   <span className="text-[10px] opacity-80 leading-tight">Overwrites text in current script</span>
                 </button>
@@ -1286,7 +1286,7 @@ export function ScriptEditor({ id: propId }: { id?: string }) {
                 >
                   <div className="flex items-center justify-between w-full">
                     <span className="text-xs font-bold">Create New Copy</span>
-                    {translateMode === 'new_copy' && <Check className="w-4 h-4 text-emerald-600" />}
+                    {translateMode === 'new_copy' && <Check className="w-4 h-4 text-emerald-600 shrink-0" />}
                   </div>
                   <span className="text-[10px] opacity-80 leading-tight">Saves as a new translated script</span>
                 </button>

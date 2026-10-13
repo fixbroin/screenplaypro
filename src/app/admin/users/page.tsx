@@ -402,7 +402,7 @@ export default function AdminUsersPage() {
       {/* User Details Modal */}
       {selectedUserForModal && isUserDetailsModalOpen && (
         <Dialog open={isUserDetailsModalOpen} onOpenChange={setIsUserDetailsModalOpen}>
-          <DialogContent className="max-w-3xl p-0 overflow-hidden">
+          <DialogContent className="max-w-3xl max-h-[90vh] max-h-[90dvh] overflow-y-auto p-0">
             <UserDetailsModal
               user={selectedUserForModal}
               onClose={() => setIsUserDetailsModalOpen(false)}

@@ -990,7 +990,7 @@ export default function OsmGeneratorDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !isGenerating && !open && onClose()}>
-      <DialogContent className="w-full max-w-xl max-h-[92vh] flex flex-col p-6 rounded-3xl">
+      <DialogContent className="w-full max-w-xl max-h-[90vh] max-h-[90dvh] overflow-y-auto flex flex-col p-6 rounded-3xl">
         <DialogHeader className="pb-4 border-b">
           <DialogTitle className="text-xl font-bold flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-primary animate-pulse" />
