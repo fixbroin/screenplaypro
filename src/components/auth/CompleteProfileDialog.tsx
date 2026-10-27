@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -11,7 +11,14 @@ import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { Loader2, User, Mail, Phone, ShieldCheck, Check } from "lucide-react";
 import { useToast } from '@/hooks/use-toast';
-import { useApplicationConfig } from '@/hooks/useApplicationConfig';
+import CountryPhoneInput from '@/components/ui/CountryPhoneInput';
+import {
+  Country,
+  DEFAULT_COUNTRY,
+  findCountryFromPhoneNumber,
+  validatePhoneNumber,
+  cleanPhoneDigits,
+} from '@/lib/countryPhoneData';
 
 interface CompleteProfileDialogProps {
   isOpen: boolean;
@@ -36,42 +43,34 @@ export default function CompleteProfileDialog({
 }: CompleteProfileDialogProps) {
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const { config, isLoading: isLoadingConfig } = useApplicationConfig();
   
   const providerId = user.providerData[0]?.providerId;
   const isPhoneSignIn = providerId === 'phone' || !!user.phoneNumber || user.providerData.some(p => p.providerId === 'phone');
   const isGoogleSignIn = providerId === 'google.com' || user.providerData.some(p => p.providerId === 'google.com');
 
-  const cleanPhoneNumber = useCallback((value: string, countryCode: string = "+91") => {
-    let cleaned = value.trim().replace(/\s+/g, '');
-    if (cleaned.startsWith('+')) {
-      if (cleaned.startsWith(countryCode)) {
-        cleaned = cleaned.substring(countryCode.length);
-      } else {
-        cleaned = cleaned.replace(/^\+\d+/, '');
-      }
-    } else if (cleaned.startsWith('0') && cleaned.length > 10) {
-      cleaned = cleaned.substring(1);
-    }
-    return cleaned.replace(/\D/g, '').slice(0, 10);
-  }, []);
+  const initialPhoneParse = findCountryFromPhoneNumber(user.phoneNumber || '');
+  const [selectedCountry, setSelectedCountry] = useState<Country>(initialPhoneParse.country || DEFAULT_COUNTRY);
 
   const form = useForm<ProfileFormData>({
     resolver: zodResolver(profileSchema),
     defaultValues: {
       fullName: user.displayName || "",
       email: user.email || "",
-      mobileNumber: user.phoneNumber ? cleanPhoneNumber(user.phoneNumber, config.defaultOtpCountryCode || '+91') : "",
+      mobileNumber: initialPhoneParse.nationalNumber || "",
     },
   });
 
   useEffect(() => {
+    const parsed = findCountryFromPhoneNumber(user.phoneNumber || '');
+    if (parsed.country) {
+      setSelectedCountry(parsed.country);
+    }
     form.reset({
       fullName: user.displayName || "",
       email: user.email || "",
-      mobileNumber: user.phoneNumber ? cleanPhoneNumber(user.phoneNumber, config.defaultOtpCountryCode || '+91') : "",
+      mobileNumber: parsed.nationalNumber || "",
     });
-  }, [user, config, form, cleanPhoneNumber]);
+  }, [user, form]);
 
   const handleSubmit = async (data: ProfileFormData) => {
     // 1. Validate full name
@@ -88,17 +87,18 @@ export default function CompleteProfileDialog({
       return;
     }
 
-    // 3. Validate mobile number (mandatory for Google / password sign in)
+    // 3. Validate mobile number with dynamic country restrictions
     let mobileNumberForSubmit = data.mobileNumber?.trim() || "";
     if (!isPhoneSignIn) {
-      if (!mobileNumberForSubmit || !/^\d{10}$/.test(mobileNumberForSubmit)) {
+      const validation = validatePhoneNumber(mobileNumberForSubmit, selectedCountry);
+      if (!validation.isValid) {
         form.setError("mobileNumber", { 
           type: "manual", 
-          message: "Please enter a valid 10-digit mobile number." 
+          message: validation.message || "Please enter a valid mobile number." 
         });
         return;
       }
-      mobileNumberForSubmit = `${config.defaultOtpCountryCode || '+91'}${mobileNumberForSubmit}`;
+      mobileNumberForSubmit = `${selectedCountry.calling_code}${mobileNumberForSubmit}`;
     } else {
       mobileNumberForSubmit = user.phoneNumber || mobileNumberForSubmit;
     }
@@ -203,7 +203,7 @@ export default function CompleteProfileDialog({
               )}
             />
 
-            {/* Mobile Number Field */}
+            {/* Mobile Number Field with Country Selector & Dynamic Restriction */}
             <FormField
               control={form.control}
               name="mobileNumber"
@@ -221,30 +221,22 @@ export default function CompleteProfileDialog({
                       </span>
                     )}
                   </div>
-                  <div className="flex items-center">
-                    <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-input bg-muted text-sm font-medium text-foreground h-10 select-none">
-                      {isLoadingConfig ? '+91' : (config.defaultOtpCountryCode || '+91')}
-                    </span>
-                    <FormControl>
-                      <Input
-                        type="tel"
-                        maxLength={10}
-                        placeholder="10-digit mobile number"
-                        {...field}
-                        onChange={(e) => {
-                          const cleaned = cleanPhoneNumber(e.target.value, config.defaultOtpCountryCode || '+91');
-                          field.onChange(cleaned);
-                        }}
-                        className="rounded-l-none font-medium"
-                        disabled={isSubmitting || isLoadingConfig || isPhoneSignIn}
-                      />
-                    </FormControl>
-                  </div>
-                  <FormDescription className="text-[11px] text-muted-foreground">
-                    {isPhoneSignIn 
-                      ? "Verified with OTP." 
-                      : "Enter your 10-digit mobile number to complete the process."}
-                  </FormDescription>
+                  <FormControl>
+                    <CountryPhoneInput
+                      value={field.value || ""}
+                      selectedCountry={selectedCountry}
+                      onCountryChange={(newCountry) => {
+                        setSelectedCountry(newCountry);
+                        const truncated = cleanPhoneDigits(field.value || "", newCountry.maxLength);
+                        field.onChange(truncated);
+                      }}
+                      onChange={(digits) => {
+                        field.onChange(digits);
+                      }}
+                      disabled={isSubmitting || isPhoneSignIn}
+                      error={form.formState.errors.mobileNumber?.message}
+                    />
+                  </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
@@ -262,7 +254,7 @@ export default function CompleteProfileDialog({
               </Button>
               <Button 
                 type="submit" 
-                disabled={isSubmitting || isLoadingConfig}
+                disabled={isSubmitting}
                 className="flex-1 sm:flex-none"
               >
                 {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

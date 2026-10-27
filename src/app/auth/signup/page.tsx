@@ -20,11 +20,14 @@ import { Separator } from '@/components/ui/separator';
 import { useApplicationConfig } from '@/hooks/useApplicationConfig';
 import { useGlobalSettings } from '@/hooks/useGlobalSettings';
 import { isWebView, requestNativeGoogleSignIn } from '@/lib/webview-bridge';
+import CountryPhoneInput from '@/components/ui/CountryPhoneInput';
+import { Country, DEFAULT_COUNTRY, validatePhoneNumber, cleanPhoneDigits } from '@/lib/countryPhoneData';
+import { useState } from 'react';
 
 const signUpSchema = z.object({
   fullName: z.string().min(2, { message: "Full name must be at least 2 characters." }),
   email: z.string().email({ message: "Invalid email address." }),
-  mobileNumber: z.string().regex(/^\d{10}$/, { message: "Please enter a valid 10-digit mobile number." }),
+  mobileNumber: z.string().min(1, { message: "Mobile number is required." }),
   password: z.string().min(6, { message: "Password must be at least 6 characters." }),
   confirmPassword: z.string(),
 }).refine(data => data.password === data.confirmPassword, {
@@ -47,6 +50,7 @@ export default function SignupPage() {
   const { config, isLoading: isLoadingConfig } = useApplicationConfig();
   const { settings: globalSettings, isLoading: isLoadingSettings } = useGlobalSettings();
   const searchParams = useSearchParams();
+  const [selectedCountry, setSelectedCountry] = useState<Country>(DEFAULT_COUNTRY);
 
   const form = useForm<SignUpFormValues>({
     resolver: zodResolver(signUpSchema),
@@ -76,7 +80,18 @@ export default function SignupPage() {
 
 
   const onEmailSubmit = async (data: SignUpFormValues) => {
-    await signUp(data);
+    const validation = validatePhoneNumber(data.mobileNumber, selectedCountry);
+    if (!validation.isValid) {
+      form.setError("mobileNumber", {
+        type: "manual",
+        message: validation.message || "Please enter a valid mobile number.",
+      });
+      return;
+    }
+    await signUp({
+      ...data,
+      mobileNumber: `${selectedCountry.calling_code}${data.mobileNumber.trim()}`,
+    });
   };
   
   const onGoogleSubmit = async () => {
@@ -140,24 +155,23 @@ export default function SignupPage() {
                   <FormField control={form.control} name="mobileNumber" render={({ field }) => (
                     <FormItem>
                       <FormLabel htmlFor="mobileNumber"><Phone className="inline mr-2 h-4 w-4 text-muted-foreground" />Mobile Number</FormLabel>
-                      <div className="flex items-center">
-                        <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-input bg-muted text-muted-foreground h-10 text-sm">
-                          {config.defaultOtpCountryCode || '+91'}
-                        </span>
-                        <FormControl>
-                          <Input
-                            id="mobileNumber"
-                            type="tel"
-                            placeholder="10-digit number"
-                            className="rounded-l-none"
-                            {...field}
-                            onChange={(e) => {
-                              const cleaned = e.target.value.replace(/\D/g, '').slice(0, 10);
-                              field.onChange(cleaned);
-                            }}
-                          />
-                        </FormControl>
-                      </div>
+                      <FormControl>
+                        <CountryPhoneInput
+                          id="mobileNumber"
+                          value={field.value || ""}
+                          selectedCountry={selectedCountry}
+                          onCountryChange={(newCountry) => {
+                            setSelectedCountry(newCountry);
+                            const truncated = cleanPhoneDigits(field.value || "", newCountry.maxLength);
+                            field.onChange(truncated);
+                          }}
+                          onChange={(digits) => {
+                            field.onChange(digits);
+                          }}
+                          disabled={authContextIsLoading}
+                          error={form.formState.errors.mobileNumber?.message}
+                        />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}/>

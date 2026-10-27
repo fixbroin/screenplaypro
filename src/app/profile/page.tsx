@@ -18,6 +18,14 @@ import { useToast } from '@/hooks/use-toast';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useApplicationConfig } from '@/hooks/useApplicationConfig';
 import { Badge } from '@/components/ui/badge';
+import CountryPhoneInput from '@/components/ui/CountryPhoneInput';
+import {
+  Country,
+  DEFAULT_COUNTRY,
+  findCountryFromPhoneNumber,
+  validatePhoneNumber,
+  cleanPhoneDigits,
+} from '@/lib/countryPhoneData';
 
 const updateNameSchema = z.object({
   displayName: z.string().min(2, { message: "Name must be at least 2 characters." }).max(50, "Name too long."),
@@ -30,7 +38,7 @@ const updateEmailSchema = z.object({
 type UpdateEmailFormValues = z.infer<typeof updateEmailSchema>;
 
 const updateMobileSchema = z.object({
-  mobileNumber: z.string().trim().regex(/^\d{10}$/, { message: "Please enter a valid 10-digit mobile number." }),
+  mobileNumber: z.string().min(1, { message: "Please enter a valid mobile number." }),
 });
 type UpdateMobileFormValues = z.infer<typeof updateMobileSchema>;
 
@@ -47,6 +55,7 @@ export default function ProfilePage() {
   const [isMobileDialogOpen, setIsMobileDialogOpen] = useState(false);
   const [isSubmittingMobile, setIsSubmittingMobile] = useState(false);
   const [mobileNumber, setMobileNumber] = useState("");
+  const [selectedMobileCountry, setSelectedMobileCountry] = useState<Country>(DEFAULT_COUNTRY);
   const [isSendingResetEmail, setIsSendingResetEmail] = useState(false);
   const [isSendingVerification, setIsSendingVerification] = useState(false);
   const [deletionRequest, setDeletionRequest] = useState<any>(null);
@@ -57,20 +66,6 @@ export default function ProfilePage() {
   const [isCancelingDeletion, setIsCancelingDeletion] = useState(false);
 
   const [activeTab, setActiveTab] = useState<string>("account");
-
-  const cleanPhoneNumber = useCallback((value: string, countryCode: string = "+91") => {
-    let cleaned = value.trim().replace(/\s+/g, '');
-    if (cleaned.startsWith('+')) {
-      if (cleaned.startsWith(countryCode)) {
-        cleaned = cleaned.substring(countryCode.length);
-      } else {
-        cleaned = cleaned.replace(/^\+\d+/, '');
-      }
-    } else if (cleaned.startsWith('0') && cleaned.length > 10) {
-      cleaned = cleaned.substring(1);
-    }
-    return cleaned.replace(/\D/g, '').slice(0, 10);
-  }, []);
 
   const nameForm = useForm<UpdateNameFormValues>({ resolver: zodResolver(updateNameSchema) });
   const emailForm = useForm<UpdateEmailFormValues>({ resolver: zodResolver(updateEmailSchema) });
@@ -84,15 +79,15 @@ export default function ProfilePage() {
       nameForm.reset({ displayName: firestoreUser.displayName || user.displayName || "" });
       emailForm.reset({ email: firestoreUser.email || user.email || "" });
       const initialMobile = firestoreUser.mobileNumber || user.phoneNumber || "";
+      const parsed = findCountryFromPhoneNumber(initialMobile);
       setMobileNumber(initialMobile);
-      mobileForm.reset({
-        mobileNumber: cleanPhoneNumber(initialMobile, config?.defaultOtpCountryCode || '+91')
-      });
+      setSelectedMobileCountry(parsed.country);
+      mobileForm.reset({ mobileNumber: parsed.nationalNumber });
       setIsLoadingData(false);
     } else if (!authIsLoading && !user) {
       setIsLoadingData(false);
     }
-  }, [user, firestoreUser, authIsLoading, nameForm, emailForm, mobileForm, config?.defaultOtpCountryCode, cleanPhoneNumber]);
+  }, [user, firestoreUser, authIsLoading, nameForm, emailForm, mobileForm]);
 
   useEffect(() => {
     if (user?.uid) {
@@ -101,16 +96,16 @@ export default function ProfilePage() {
         .then(json => {
           if (json.success && json.user) {
             if (json.user.mobileNumber) {
+              const parsed = findCountryFromPhoneNumber(json.user.mobileNumber);
               setMobileNumber(json.user.mobileNumber);
-              mobileForm.reset({
-                mobileNumber: cleanPhoneNumber(json.user.mobileNumber, config?.defaultOtpCountryCode || '+91')
-              });
+              setSelectedMobileCountry(parsed.country);
+              mobileForm.reset({ mobileNumber: parsed.nationalNumber });
             }
           }
         })
         .catch(err => console.error("Error fetching user details in profile:", err));
     }
-  }, [user, config?.defaultOtpCountryCode, cleanPhoneNumber, mobileForm]);
+  }, [user, mobileForm]);
 
   useEffect(() => {
     if (user?.uid) {
@@ -173,10 +168,18 @@ export default function ProfilePage() {
 
   const handleUpdateMobile = async (values: UpdateMobileFormValues) => {
     if (!user) return;
+    const validation = validatePhoneNumber(values.mobileNumber, selectedMobileCountry);
+    if (!validation.isValid) {
+      mobileForm.setError("mobileNumber", {
+        type: "manual",
+        message: validation.message || "Please enter a valid mobile number.",
+      });
+      return;
+    }
+
     setIsSubmittingMobile(true);
     try {
-      const countryCode = config?.defaultOtpCountryCode || '+91';
-      const formattedNumber = `${countryCode}${values.mobileNumber.trim()}`;
+      const formattedNumber = `${selectedMobileCountry.calling_code}${values.mobileNumber.trim()}`;
 
       const res = await fetch('/api/db/users', {
         method: 'POST',
@@ -351,21 +354,35 @@ export default function ProfilePage() {
                 <div className="flex items-center justify-between p-4 bg-secondary/10 rounded-2xl border border-primary/5">
                   <div>
                     <p className="text-xs text-muted-foreground uppercase font-bold">Mobile Number</p>
-                    <p className="text-sm font-semibold flex items-center gap-2">
-                      <Phone className="h-3.5 w-3.5 text-primary" />
+                    <div className="text-sm font-semibold flex items-center gap-2 mt-0.5">
                       {mobileNumber ? (
-                        <span>{mobileNumber}</span>
+                        (() => {
+                          const parsed = findCountryFromPhoneNumber(mobileNumber);
+                          return (
+                            <span className="flex items-center gap-2 font-mono">
+                              <img
+                                src={`/${parsed.country.flag}`}
+                                alt={parsed.country.name}
+                                className="w-5 h-3.5 object-cover rounded-xs border border-border/40 shrink-0"
+                                onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+                              />
+                              <span>{mobileNumber}</span>
+                            </span>
+                          );
+                        })()
                       ) : (
                         <span className="text-muted-foreground italic font-normal">Not provided</span>
                       )}
-                    </p>
+                    </div>
                   </div>
                   <Button 
                     variant="outline" 
                     size="sm" 
                     onClick={() => {
+                      const parsed = findCountryFromPhoneNumber(mobileNumber);
+                      setSelectedMobileCountry(parsed.country);
                       mobileForm.reset({
-                        mobileNumber: cleanPhoneNumber(mobileNumber, config?.defaultOtpCountryCode || '+91')
+                        mobileNumber: parsed.nationalNumber
                       });
                       setIsMobileDialogOpen(true);
                     }}
@@ -522,7 +539,7 @@ export default function ProfilePage() {
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>Update Mobile Number</DialogTitle>
-            <DialogDescription>Enter your 10-digit mobile number.</DialogDescription>
+            <DialogDescription>Select your country code and enter your mobile number.</DialogDescription>
           </DialogHeader>
           <Form {...mobileForm}>
             <form onSubmit={mobileForm.handleSubmit(handleUpdateMobile)} className="space-y-4 py-2">
@@ -534,26 +551,23 @@ export default function ProfilePage() {
                     <FormLabel htmlFor="mobileNumber" className="flex items-center gap-2">
                       <Phone className="h-4 w-4 text-primary" /> Mobile Number
                     </FormLabel>
-                    <div className="flex items-center">
-                      <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-input bg-muted text-sm font-medium text-foreground h-10 select-none">
-                        {isLoadingAppSettings ? '+91' : (config?.defaultOtpCountryCode || '+91')}
-                      </span>
-                      <FormControl>
-                        <Input 
-                          id="mobileNumber"
-                          type="tel"
-                          maxLength={10}
-                          placeholder="10-digit mobile number" 
-                          {...field}
-                          onChange={(e) => {
-                            const cleaned = cleanPhoneNumber(e.target.value, config?.defaultOtpCountryCode || '+91');
-                            field.onChange(cleaned);
-                          }}
-                          className="rounded-l-none font-medium"
-                          disabled={isSubmittingMobile} 
-                        />
-                      </FormControl>
-                    </div>
+                    <FormControl>
+                      <CountryPhoneInput
+                        id="mobileNumber"
+                        value={field.value || ""}
+                        selectedCountry={selectedMobileCountry}
+                        onCountryChange={(newCountry) => {
+                          setSelectedMobileCountry(newCountry);
+                          const truncated = cleanPhoneDigits(field.value || "", newCountry.maxLength);
+                          field.onChange(truncated);
+                        }}
+                        onChange={(digits) => {
+                          field.onChange(digits);
+                        }}
+                        disabled={isSubmittingMobile}
+                        error={mobileForm.formState.errors.mobileNumber?.message}
+                      />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}

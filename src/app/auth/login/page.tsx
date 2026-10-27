@@ -25,6 +25,8 @@ import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp
 import { useToast } from '@/hooks/use-toast';
 import { useGlobalSettings } from '@/hooks/useGlobalSettings';
 import { isWebView, requestNativeGoogleSignIn } from '@/lib/webview-bridge';
+import CountryPhoneInput from '@/components/ui/CountryPhoneInput';
+import { Country, DEFAULT_COUNTRY, validatePhoneNumber, cleanPhoneDigits } from '@/lib/countryPhoneData';
 
 const loginSchema = z.object({
   email: z.string().email({ message: "Invalid email address." }),
@@ -33,7 +35,7 @@ const loginSchema = z.object({
 type LoginFormValues = z.infer<typeof loginSchema>;
 
 const phoneSchema = z.object({
-  phone: z.string().min(10, "Please enter a valid 10-digit mobile number."),
+  phone: z.string().min(1, "Please enter a valid mobile number."),
 });
 type PhoneFormValues = z.infer<typeof phoneSchema>;
 
@@ -61,6 +63,7 @@ export default function LoginPage() {
   const [isSendingOtp, setIsSendingOtp] = useState(false);
   const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
   const [fullPhoneNumberForDisplay, setFullPhoneNumberForDisplay] = useState('');
+  const [selectedPhoneCountry, setSelectedPhoneCountry] = useState<Country>(DEFAULT_COUNTRY);
   
   const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
 
@@ -126,8 +129,17 @@ export default function LoginPage() {
 
 
   const onPhoneSubmit = async (data: PhoneFormValues) => {
+    const validation = validatePhoneNumber(data.phone, selectedPhoneCountry);
+    if (!validation.isValid) {
+      phoneForm.setError("phone", {
+        type: "manual",
+        message: validation.message || "Please enter a valid mobile number.",
+      });
+      return;
+    }
+
     setIsSendingOtp(true);
-    const fullPhoneNumber = `${config.defaultOtpCountryCode}${data.phone}`;
+    const fullPhoneNumber = `${selectedPhoneCountry.calling_code}${data.phone.trim()}`;
     setFullPhoneNumberForDisplay(fullPhoneNumber);
     try {
       const verifier = await setupAndRenderRecaptcha();
@@ -275,7 +287,33 @@ export default function LoginPage() {
                   </TabsContent>
                   <TabsContent value="otp" className="pt-4">
                       <Form {...phoneForm}><form onSubmit={phoneForm.handleSubmit(onPhoneSubmit)} className="space-y-4">
-                          <FormField control={phoneForm.control} name="phone" render={({ field }) => (<FormItem><FormLabel htmlFor="phone"><Phone className="inline mr-2 h-4 w-4 text-muted-foreground" />Phone Number</FormLabel><FormControl><Input id="phone" type="tel" placeholder="Enter mobile number" onChange={handlePhoneInputChange} onKeyDown={handlePhoneKeyDown} defaultValue={config.defaultOtpCountryCode} /></FormControl><FormMessage /></FormItem>)}/>
+                          <FormField 
+                            control={phoneForm.control} 
+                            name="phone" 
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel htmlFor="phone"><Phone className="inline mr-2 h-4 w-4 text-muted-foreground" />Phone Number</FormLabel>
+                                <FormControl>
+                                  <CountryPhoneInput
+                                    id="phone"
+                                    value={field.value || ""}
+                                    selectedCountry={selectedPhoneCountry}
+                                    onCountryChange={(newCountry) => {
+                                      setSelectedPhoneCountry(newCountry);
+                                      const truncated = cleanPhoneDigits(field.value || "", newCountry.maxLength);
+                                      field.onChange(truncated);
+                                    }}
+                                    onChange={(digits) => {
+                                      field.onChange(digits);
+                                    }}
+                                    disabled={isSendingOtp}
+                                    error={phoneForm.formState.errors.phone?.message}
+                                  />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
                           <Button type="submit" className="w-full" disabled={isSendingOtp}>{isSendingOtp && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Send OTP</Button>
                       </form></Form>
                   </TabsContent>
@@ -289,7 +327,33 @@ export default function LoginPage() {
               </form></Form>
             ) : enabledMethods[0] === 'otp' ? (
               <Form {...phoneForm}><form onSubmit={phoneForm.handleSubmit(onPhoneSubmit)} className="space-y-4">
-                  <FormField control={phoneForm.control} name="phone" render={({ field }) => (<FormItem><FormLabel htmlFor="phone"><Phone className="inline mr-2 h-4 w-4 text-muted-foreground" />Phone Number</FormLabel><FormControl><Input id="phone" type="tel" placeholder="Enter mobile number" onChange={handlePhoneInputChange} onKeyDown={handlePhoneKeyDown} defaultValue={config.defaultOtpCountryCode}/></FormControl><FormMessage /></FormItem>)}/>
+                  <FormField 
+                    control={phoneForm.control} 
+                    name="phone" 
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel htmlFor="phone"><Phone className="inline mr-2 h-4 w-4 text-muted-foreground" />Phone Number</FormLabel>
+                        <FormControl>
+                          <CountryPhoneInput
+                            id="phone"
+                            value={field.value || ""}
+                            selectedCountry={selectedPhoneCountry}
+                            onCountryChange={(newCountry) => {
+                              setSelectedPhoneCountry(newCountry);
+                              const truncated = cleanPhoneDigits(field.value || "", newCountry.maxLength);
+                              field.onChange(truncated);
+                            }}
+                            onChange={(digits) => {
+                              field.onChange(digits);
+                            }}
+                            disabled={isSendingOtp}
+                            error={phoneForm.formState.errors.phone?.message}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                   <Button type="submit" className="w-full" disabled={isSendingOtp}>{isSendingOtp && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Send OTP</Button>
               </form></Form>
             ) : (
