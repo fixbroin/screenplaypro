@@ -19,6 +19,7 @@ import { ADMIN_EMAIL } from '@/contexts/AuthContext';
 import { Separator } from '@/components/ui/separator';
 import { useApplicationConfig } from '@/hooks/useApplicationConfig';
 import { useGlobalSettings } from '@/hooks/useGlobalSettings';
+import { isWebView, requestNativeGoogleSignIn } from '@/lib/webview-bridge';
 
 const signUpSchema = z.object({
   fullName: z.string().min(2, { message: "Full name must be at least 2 characters." }),
@@ -42,7 +43,7 @@ const GoogleIcon = () => (
 
 export default function SignupPage() {
   const router = useRouter();
-  const { user, signUp, signInWithGoogle, isLoading: authContextIsLoading } = useAuth();
+  const { user, signUp, signInWithGoogle, isLoading: authContextIsLoading, isCompletingProfile } = useAuth();
   const { config, isLoading: isLoadingConfig } = useApplicationConfig();
   const { settings: globalSettings, isLoading: isLoadingSettings } = useGlobalSettings();
   const searchParams = useSearchParams();
@@ -59,21 +60,8 @@ export default function SignupPage() {
   });
 
   useEffect(() => {
-    // Capture referral code from URL and store it
-    const refCode = searchParams.get('ref');
-    if (refCode) {
-      try {
-        localStorage.setItem("referralCode", refCode);
-        console.log(`Referral code "${refCode}" captured on signup page and stored.`);
-      } catch (e) {
-        console.error("Could not save referral code to localStorage from signup page:", e);
-      }
-    }
-  }, [searchParams]);
-
-  useEffect(() => {
     // Only redirect if user is fully authenticated and NOT completing profile
-    if (user && !authContextIsLoading) {
+    if (user && !authContextIsLoading && !isCompletingProfile) {
       const redirectPathFromQuery = searchParams.get('redirect');
       let finalRedirectPath = '/';
 
@@ -84,7 +72,7 @@ export default function SignupPage() {
       }
       router.push(finalRedirectPath);
     }
-  }, [user, authContextIsLoading, router, searchParams]);
+  }, [user, authContextIsLoading, isCompletingProfile, router, searchParams]);
 
 
   const onEmailSubmit = async (data: SignUpFormValues) => {
@@ -92,10 +80,14 @@ export default function SignupPage() {
   };
   
   const onGoogleSubmit = async () => {
+    if (isWebView()) {
+      requestNativeGoogleSignIn();
+      return;
+    }
     await signInWithGoogle();
   };
 
-  if (authContextIsLoading || isLoadingConfig || isLoadingSettings || (user && !authContextIsLoading)) {
+  if (authContextIsLoading || isLoadingConfig || isLoadingSettings || (user && !authContextIsLoading && !isCompletingProfile)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-secondary/30 p-4">
          <Loader2 className="h-12 w-12 animate-spin text-primary" />

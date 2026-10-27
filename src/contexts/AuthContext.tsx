@@ -13,6 +13,7 @@ import {
   updateProfile,
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithCredential,
   verifyBeforeUpdateEmail,
 } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
@@ -121,8 +122,13 @@ export const AuthProvider: React.FC<PropsWithChildren> = ({ children }) => {
         }
 
         const dbUser = await fetchMySQLUser(currentUser.uid);
-        if (dbUser) {
-          if (dbUser.isActive === false || (dbUser as any).isActive === 0) {
+        const hasMobileNumber = Boolean(
+          (dbUser?.mobileNumber && dbUser.mobileNumber.trim() !== '') ||
+          (currentUser.phoneNumber && currentUser.phoneNumber.trim() !== '')
+        );
+
+        if (hasMobileNumber) {
+          if (dbUser && (dbUser.isActive === false || (dbUser as any).isActive === 0)) {
             await signOut(auth);
             toast({
               title: "Account Disabled",
@@ -136,26 +142,29 @@ export const AuthProvider: React.FC<PropsWithChildren> = ({ children }) => {
             return;
           }
 
-          setFirestoreUser(dbUser);
+          if (dbUser) {
+            setFirestoreUser(dbUser);
+          } else {
+            const newUserData = {
+              id: currentUser.uid,
+              email: currentUser.email || '',
+              displayName: currentUser.displayName || 'User',
+              mobileNumber: currentUser.phoneNumber || '',
+              photoURL: currentUser.photoURL || '',
+              isActive: 1,
+              roles: ['user']
+            };
+            await saveMySQLUser(newUserData);
+            setFirestoreUser(newUserData as unknown as FirestoreUser);
+          }
           setUser(currentUser);
           setIsCompletingProfile(false);
           setPendingUserForProfileCompletion(null);
         } else {
-          // Auto-create in MySQL
-          const newUserData = {
-            id: currentUser.uid,
-            email: currentUser.email || '',
-            displayName: currentUser.displayName || 'User',
-            mobileNumber: currentUser.phoneNumber || '',
-            photoURL: currentUser.photoURL || '',
-            isActive: 1,
-            roles: ['user']
-          };
-          await saveMySQLUser(newUserData);
-          setFirestoreUser(newUserData as unknown as FirestoreUser);
-          setUser(currentUser);
-          setIsCompletingProfile(false);
-          setPendingUserForProfileCompletion(null);
+          // User exists in Firebase but has no mobile number -> trigger complete profile
+          setPendingUserForProfileCompletion(currentUser);
+          setIsCompletingProfile(true);
+          setUser(null);
         }
       } else {
         setUser(null);
@@ -183,12 +192,61 @@ export const AuthProvider: React.FC<PropsWithChildren> = ({ children }) => {
     const { user } = userCredential;
 
     try {
+      if (user.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
+        const dbUser = await fetchMySQLUser(user.uid);
+        const adminUserData = {
+          id: user.uid,
+          email: user.email || '',
+          displayName: user.displayName || 'Admin',
+          mobileNumber: user.phoneNumber || dbUser?.mobileNumber || '',
+          photoURL: user.photoURL || dbUser?.photoURL || '',
+          isActive: 1,
+          roles: ['admin', 'user']
+        };
+        await saveMySQLUser(adminUserData);
+        setFirestoreUser((dbUser ? { ...dbUser, ...adminUserData } : adminUserData) as unknown as FirestoreUser);
+        setUser(user);
+        setIsCompletingProfile(false);
+        setPendingUserForProfileCompletion(null);
+        router.push('/admin');
+        setIsLoading(false);
+        return;
+      }
+
       const dbUser = await fetchMySQLUser(user.uid);
+      const hasMobileNumber = Boolean(
+        (dbUser?.mobileNumber && dbUser.mobileNumber.trim() !== '') ||
+        (user.phoneNumber && user.phoneNumber.trim() !== '')
+      );
+
+      // If user does not have a mobile number, show CompleteProfileDialog
+      if (!hasMobileNumber) {
+        setPendingUserForProfileCompletion(user);
+        setIsCompletingProfile(true);
+        setUser(null);
+        setIsLoading(false);
+        return;
+      }
+
+      if (dbUser && (dbUser.isActive === false || (dbUser as any).isActive === 0)) {
+        await signOut(auth);
+        toast({
+          title: "Account Disabled",
+          description: "Your account has been disabled by the admin.",
+          variant: "destructive"
+        });
+        setUser(null);
+        setIsCompletingProfile(false);
+        setPendingUserForProfileCompletion(null);
+        setIsLoading(false);
+        return;
+      }
+
       const newUserData = {
         id: user.uid,
         email: user.email || dbUser?.email || '',
         displayName: user.displayName || dbUser?.displayName || 'User',
-        mobileNumber: user.phoneNumber || dbUser?.mobileNumber || '',
+        mobileNumber: dbUser?.mobileNumber || user.phoneNumber || '',
         photoURL: user.photoURL || dbUser?.photoURL || '',
         isActive: 1,
         roles: ['user']
@@ -199,7 +257,7 @@ export const AuthProvider: React.FC<PropsWithChildren> = ({ children }) => {
 
       logUserActivity('userLogin', {
         email: user.email || undefined,
-        mobileNumber: user.phoneNumber || undefined,
+        mobileNumber: newUserData.mobileNumber || undefined,
         loginMethod: user.providerData[0]?.providerId || 'password',
         sourceGuestId: guestIdBeforeAuth
       }, user.uid, null);
@@ -215,9 +273,7 @@ export const AuthProvider: React.FC<PropsWithChildren> = ({ children }) => {
 
       const redirectPathFromQuery = searchParams.get('redirect');
       let finalRedirectPath = '/';
-      if (user.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
-        finalRedirectPath = '/admin';
-      } else if (redirectPathFromQuery && !redirectPathFromQuery.startsWith('/auth/')) {
+      if (redirectPathFromQuery && !redirectPathFromQuery.startsWith('/auth/')) {
         finalRedirectPath = redirectPathFromQuery;
       } else if (authActionRedirectPath && !authActionRedirectPath.startsWith('/auth/')) {
         finalRedirectPath = authActionRedirectPath;
@@ -273,11 +329,16 @@ export const AuthProvider: React.FC<PropsWithChildren> = ({ children }) => {
         }
       }
 
+      const rawMobile = details.mobileNumber || userToUpdate.phoneNumber || '';
+      const formattedMobile = rawMobile
+        ? (rawMobile.startsWith('+') ? rawMobile : `${appConfig.defaultOtpCountryCode || '+91'}${rawMobile.replace(/\D/g, '')}`)
+        : '';
+
       const newUserData = {
         id: userToUpdate.uid,
         email: details.email || userToUpdate.email || '',
         displayName: details.fullName,
-        mobileNumber: userToUpdate.phoneNumber || details.mobileNumber || '',
+        mobileNumber: formattedMobile,
         photoURL: userToUpdate.photoURL || '',
         isActive: 1,
         roles: ['user']
@@ -288,23 +349,29 @@ export const AuthProvider: React.FC<PropsWithChildren> = ({ children }) => {
 
       const guestIdBeforeAuth = getGuestId();
       logUserActivity('newUser', {
-        email: userToUpdate.email || undefined,
+        email: userToUpdate.email || details.email || undefined,
         fullName: details.fullName,
-        mobileNumber: userToUpdate.phoneNumber || details.mobileNumber,
-        loginMethod: userToUpdate.providerData[0]?.providerId || 'unknown',
+        mobileNumber: formattedMobile || undefined,
+        loginMethod: userToUpdate.providerData[0]?.providerId || 'google.com',
         sourceGuestId: guestIdBeforeAuth,
       }, userToUpdate.uid, null);
 
       clearGuestId();
       await syncCartOnLogin(userToUpdate.uid);
 
-      if (appConfig.smtpHost && details.email) {
+      if (appConfig.smtpHost && (details.email || userToUpdate.email)) {
         sendWelcomeEmail({
           userName: details.fullName,
-          userEmail: details.email,
+          userEmail: details.email || userToUpdate.email || '',
           smtpHost: appConfig.smtpHost, smtpPort: appConfig.smtpPort,
           smtpUser: appConfig.smtpUser, smtpPass: appConfig.smtpPass, senderEmail: appConfig.senderEmail,
         }).catch((err: any) => console.error("Failed to send welcome email:", err));
+      }
+
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.removeItem('referralCode');
+        } catch (e) {}
       }
 
       setUser(userToUpdate);
@@ -420,6 +487,29 @@ export const AuthProvider: React.FC<PropsWithChildren> = ({ children }) => {
       }
     }
   }, [toast, handleSuccessfulAuth]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleNativeGoogleSignIn = async (event: any) => {
+      const idToken = event.detail?.idToken;
+      if (!idToken) return;
+      setIsLoading(true);
+      try {
+        const credential = GoogleAuthProvider.credential(idToken);
+        const userCredential = await signInWithCredential(auth, credential);
+        await handleSuccessfulAuth(userCredential);
+      } catch (err: any) {
+        console.error("Native Google Sign-In error:", err);
+        toast({ title: "Google Sign-In Failed", description: err.message || "Failed to sign in with Google", variant: "destructive" });
+        setIsLoading(false);
+      }
+    };
+
+    window.addEventListener('nativeGoogleSignIn', handleNativeGoogleSignIn);
+    return () => {
+      window.removeEventListener('nativeGoogleSignIn', handleNativeGoogleSignIn);
+    };
+  }, [handleSuccessfulAuth, toast]);
 
   const logOut = useCallback(async () => {
     setIsLoading(true);

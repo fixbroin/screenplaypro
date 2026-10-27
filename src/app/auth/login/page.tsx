@@ -50,7 +50,7 @@ const GoogleIcon = () => (
 
 export default function LoginPage() {
   const router = useRouter();
-  const { user, logIn, signInWithGoogle, handleSuccessfulAuth, isLoading: authContextIsLoading } = useAuth();
+  const { user, logIn, signInWithGoogle, handleSuccessfulAuth, isLoading: authContextIsLoading, isCompletingProfile } = useAuth();
   const { config, isLoading: isLoadingConfig } = useApplicationConfig();
   const { settings: globalSettings, isLoading: isLoadingSettings } = useGlobalSettings();
   const searchParams = useSearchParams();
@@ -69,26 +69,13 @@ export default function LoginPage() {
   const otpForm = useForm<OtpFormValues>({ resolver: zodResolver(otpSchema), defaultValues: { otp: "" } });
 
   useEffect(() => {
-    // Capture referral code from URL and store it
-    const refCode = searchParams.get('ref');
-    if (refCode) {
-      try {
-        localStorage.setItem("referralCode", refCode);
-        console.log(`Referral code "${refCode}" captured on login page and stored.`);
-      } catch (e) {
-        console.error("Could not save referral code to localStorage from login page:", e);
-      }
-    }
-  }, [searchParams]);
-
-  useEffect(() => {
     // Only redirect if the user is fully authenticated and NOT in the middle of profile completion
-    if (user && !authContextIsLoading) {
+    if (user && !authContextIsLoading && !isCompletingProfile) {
       const redirectPathFromQuery = searchParams.get('redirect');
       const finalRedirectPath = redirectPathFromQuery || (user.email === ADMIN_EMAIL ? '/admin' : '/');
       router.push(finalRedirectPath);
     }
-  }, [user, authContextIsLoading, router, searchParams]);
+  }, [user, authContextIsLoading, isCompletingProfile, router, searchParams]);
 
   const onEmailSubmit = async (data: LoginFormValues) => { await logIn(data); };
   
@@ -194,7 +181,7 @@ export default function LoginPage() {
     }
   };
 
-  if (authContextIsLoading || isLoadingConfig || isLoadingSettings || (user && !authContextIsLoading)) {
+  if (authContextIsLoading || isLoadingConfig || isLoadingSettings || (user && !authContextIsLoading && !isCompletingProfile)) {
     return <div className="min-h-screen flex items-center justify-center bg-secondary/30 p-4"><Loader2 className="h-12 w-12 animate-spin text-primary" /><p className="ml-3 text-muted-foreground">Loading...</p></div>;
   }
 

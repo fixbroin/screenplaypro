@@ -8,23 +8,22 @@ import type { User as FirebaseUser } from 'firebase/auth';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Loader2, User, Mail, Phone, Gift } from "lucide-react";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
+import { Loader2, User, Mail, Phone, ShieldCheck, Check } from "lucide-react";
 import { useToast } from '@/hooks/use-toast';
 import { useApplicationConfig } from '@/hooks/useApplicationConfig';
 
 interface CompleteProfileDialogProps {
   isOpen: boolean;
   user: FirebaseUser;
-  onSubmit: (details: { fullName: string; email?: string; mobileNumber?: string; referralCode?: string }) => Promise<void>;
+  onSubmit: (details: { fullName: string; email?: string; mobileNumber?: string }) => Promise<void>;
   onClose: () => void;
 }
 
 const profileSchema = z.object({
-  fullName: z.string().min(2, "Full name must be at least 2 characters."),
+  fullName: z.string().trim().min(2, "Full name must be at least 2 characters."),
   mobileNumber: z.string().optional(),
   email: z.string().optional(),
-  referralCode: z.string().optional(),
 });
 
 type ProfileFormData = z.infer<typeof profileSchema>;
@@ -54,7 +53,7 @@ export default function CompleteProfileDialog({
     } else if (cleaned.startsWith('0') && cleaned.length > 10) {
       cleaned = cleaned.substring(1);
     }
-    return cleaned.replace(/\D/g, '');
+    return cleaned.replace(/\D/g, '').slice(0, 10);
   }, []);
 
   const form = useForm<ProfileFormData>({
@@ -63,7 +62,6 @@ export default function CompleteProfileDialog({
       fullName: user.displayName || "",
       email: user.email || "",
       mobileNumber: user.phoneNumber ? cleanPhoneNumber(user.phoneNumber, config.defaultOtpCountryCode || '+91') : "",
-      referralCode: "",
     },
   });
 
@@ -72,33 +70,45 @@ export default function CompleteProfileDialog({
       fullName: user.displayName || "",
       email: user.email || "",
       mobileNumber: user.phoneNumber ? cleanPhoneNumber(user.phoneNumber, config.defaultOtpCountryCode || '+91') : "",
-      referralCode: "",
     });
   }, [user, config, form, cleanPhoneNumber]);
 
   const handleSubmit = async (data: ProfileFormData) => {
-    let mobileNumberForSubmit = data.mobileNumber;
-
-    if (isGoogleSignIn || providerId === 'password') {
-      if (!data.mobileNumber || !/^\d{10}$/.test(data.mobileNumber)) {
-        form.setError("mobileNumber", { type: "manual", message: "A valid 10-digit mobile number is required." });
-        return;
-      }
-      mobileNumberForSubmit = `${config.defaultOtpCountryCode || '+91'}${data.mobileNumber}`;
+    // 1. Validate full name
+    const trimmedName = data.fullName.trim();
+    if (trimmedName.length < 2) {
+      form.setError("fullName", { type: "manual", message: "Full name must be at least 2 characters." });
+      return;
     }
 
-    if (isPhoneSignIn && (!data.email || !z.string().email().safeParse(data.email).success)) {
+    // 2. Validate email
+    const emailForSubmit = (data.email || user.email || "").trim();
+    if (!emailForSubmit || !z.string().email().safeParse(emailForSubmit).success) {
       form.setError("email", { type: "manual", message: "A valid email address is required." });
       return;
+    }
+
+    // 3. Validate mobile number (mandatory for Google / password sign in)
+    let mobileNumberForSubmit = data.mobileNumber?.trim() || "";
+    if (!isPhoneSignIn) {
+      if (!mobileNumberForSubmit || !/^\d{10}$/.test(mobileNumberForSubmit)) {
+        form.setError("mobileNumber", { 
+          type: "manual", 
+          message: "Please enter a valid 10-digit mobile number." 
+        });
+        return;
+      }
+      mobileNumberForSubmit = `${config.defaultOtpCountryCode || '+91'}${mobileNumberForSubmit}`;
+    } else {
+      mobileNumberForSubmit = user.phoneNumber || mobileNumberForSubmit;
     }
     
     setIsSubmitting(true);
     try {
       await onSubmit({
-        fullName: data.fullName,
-        email: data.email || user.email || undefined,
-        mobileNumber: mobileNumberForSubmit || user.phoneNumber || undefined,
-        referralCode: data.referralCode,
+        fullName: trimmedName,
+        email: emailForSubmit,
+        mobileNumber: mobileNumberForSubmit,
       });
     } catch (error: any) {
       const errorMessage = error.message || "Could not save profile. Please try again.";
@@ -108,12 +118,10 @@ export default function CompleteProfileDialog({
     }
   };
 
-  const hasAutoReferral = typeof window !== 'undefined' && !!localStorage.getItem('referralCode');
-
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent 
-        className="max-w-[90%] sm:max-w-md"
+        className="max-w-[92vw] sm:max-w-md max-h-[90vh] overflow-y-auto"
         onInteractOutside={(e) => e.preventDefault()}
         onEscapeKeyDown={(e) => {
             e.preventDefault();
@@ -121,96 +129,145 @@ export default function CompleteProfileDialog({
         }}
         hideCloseButton={true}
       >
-        <DialogHeader>
-          <DialogTitle className="text-xl">Complete Your Profile</DialogTitle>
-          <DialogDescription>
-            Welcome! We just need a few more details to create your account.
+        <DialogHeader className="text-center sm:text-left">
+          <div className="mx-auto sm:mx-0 w-11 h-11 rounded-full bg-primary/10 flex items-center justify-center mb-2 text-primary">
+            <User className="w-5 h-5" />
+          </div>
+          <DialogTitle className="text-xl font-bold">Complete Your Profile</DialogTitle>
+          <DialogDescription className="text-xs sm:text-sm text-muted-foreground">
+            Welcome! Please confirm your details and enter your mobile number to complete your account setup.
           </DialogDescription>
         </DialogHeader>
+
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4 pt-1">
+            {/* Full Name Field */}
             <FormField
               control={form.control}
               name="fullName"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="flex items-center"><User className="mr-2 h-4 w-4" />Full Name</FormLabel>
+                  <FormLabel className="flex items-center text-sm font-medium">
+                    <User className="mr-2 h-4 w-4 text-primary" />
+                    Full Name <span className="text-destructive ml-0.5">*</span>
+                  </FormLabel>
                   <FormControl>
-                    <Input placeholder="Your full name" {...field} disabled={isSubmitting} />
+                    <Input 
+                      placeholder="Your full name" 
+                      {...field} 
+                      disabled={isSubmitting} 
+                    />
                   </FormControl>
+                  <FormDescription className="text-[11px] text-muted-foreground">
+                    Taken by default from your account, but you can change it.
+                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
             />
 
-            {!isPhoneSignIn && (
-              <FormField
-                control={form.control}
-                name="mobileNumber"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="flex items-center"><Phone className="mr-2 h-4 w-4" />Mobile Number</FormLabel>
-                     <div className="flex items-center">
-                        <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-input bg-muted text-muted-foreground h-10">
-                          {isLoadingConfig ? '...' : config.defaultOtpCountryCode}
-                        </span>
-                        <FormControl>
-                          <Input
-                            type="tel"
-                            placeholder="10-digit number"
-                            {...field}
-                            onChange={(e) => {
-                              const cleaned = cleanPhoneNumber(e.target.value, config.defaultOtpCountryCode || '+91');
-                              field.onChange(cleaned);
-                            }}
-                            className="rounded-l-none"
-                            disabled={isSubmitting || isLoadingConfig}
-                          />
-                        </FormControl>
-                      </div>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            )}
-             
-            {isPhoneSignIn && (
-              <FormField
-                control={form.control}
-                name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="flex items-center"><Mail className="mr-2 h-4 w-4" />Email Address</FormLabel>
-                    <FormControl>
-                      <Input type="email" placeholder="Your email address" {...field} disabled={isSubmitting} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            )}
+            {/* Email Address Field */}
+            <FormField
+              control={form.control}
+              name="email"
+              render={({ field }) => (
+                <FormItem>
+                  <div className="flex items-center justify-between">
+                    <FormLabel className="flex items-center text-sm font-medium">
+                      <Mail className="mr-2 h-4 w-4 text-primary" />
+                      Email Address <span className="text-destructive ml-0.5">*</span>
+                    </FormLabel>
+                    {isGoogleSignIn && (
+                      <span className="text-[11px] font-normal text-muted-foreground bg-muted px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <ShieldCheck className="h-3 w-3 text-green-600 dark:text-green-400" />
+                        Google Account
+                      </span>
+                    )}
+                  </div>
+                  <FormControl>
+                    <Input 
+                      type="email" 
+                      placeholder="Your email address" 
+                      {...field} 
+                      disabled={isSubmitting || (isGoogleSignIn && !!user.email)} 
+                      className={isGoogleSignIn && !!user.email ? "bg-muted text-muted-foreground cursor-not-allowed select-none" : ""}
+                    />
+                  </FormControl>
+                  <FormDescription className="text-[11px] text-muted-foreground">
+                    {isGoogleSignIn && !!user.email 
+                      ? "Taken automatically from your Google account." 
+                      : "We will use this email for account updates."}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
-            {!hasAutoReferral && (
-              <FormField
-                control={form.control}
-                name="referralCode"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="flex items-center text-primary/80"><Gift className="mr-2 h-4 w-4" />Referral Code (Optional)</FormLabel>
+            {/* Mobile Number Field */}
+            <FormField
+              control={form.control}
+              name="mobileNumber"
+              render={({ field }) => (
+                <FormItem>
+                  <div className="flex items-center justify-between">
+                    <FormLabel className="flex items-center text-sm font-medium">
+                      <Phone className="mr-2 h-4 w-4 text-primary" />
+                      Mobile Number <span className="text-destructive ml-0.5">*</span>
+                    </FormLabel>
+                    {isPhoneSignIn && (
+                      <span className="text-[11px] font-normal text-green-600 dark:text-green-400 bg-green-500/10 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <Check className="h-3 w-3" />
+                        Verified Phone
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center">
+                    <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-input bg-muted text-sm font-medium text-foreground h-10 select-none">
+                      {isLoadingConfig ? '+91' : (config.defaultOtpCountryCode || '+91')}
+                    </span>
                     <FormControl>
-                      <Input placeholder="Enter referral code" {...field} disabled={isSubmitting} className="uppercase font-mono" />
+                      <Input
+                        type="tel"
+                        maxLength={10}
+                        placeholder="10-digit mobile number"
+                        {...field}
+                        onChange={(e) => {
+                          const cleaned = cleanPhoneNumber(e.target.value, config.defaultOtpCountryCode || '+91');
+                          field.onChange(cleaned);
+                        }}
+                        className="rounded-l-none font-medium"
+                        disabled={isSubmitting || isLoadingConfig || isPhoneSignIn}
+                      />
                     </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            )}
+                  </div>
+                  <FormDescription className="text-[11px] text-muted-foreground">
+                    {isPhoneSignIn 
+                      ? "Verified with OTP." 
+                      : "Enter your 10-digit mobile number to complete the process."}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
             
-            <DialogFooter className="gap-2 sm:gap-0 pt-2">
-                <Button type="submit" disabled={isSubmitting || isLoadingConfig}>
-                    {(isSubmitting || isLoadingConfig) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Create Account
-                </Button>
+            <DialogFooter className="flex flex-row justify-end gap-2 pt-3 sm:gap-2">
+              <Button 
+                type="button" 
+                variant="outline" 
+                onClick={onClose} 
+                disabled={isSubmitting}
+                className="flex-1 sm:flex-none"
+              >
+                Cancel
+              </Button>
+              <Button 
+                type="submit" 
+                disabled={isSubmitting || isLoadingConfig}
+                className="flex-1 sm:flex-none"
+              >
+                {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Complete Registration
+              </Button>
             </DialogFooter>
           </form>
         </Form>

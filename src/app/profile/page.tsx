@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/useAuth";
-import { ShieldAlert, KeyRound, Trash2, Loader2, Edit3, User as UserIcon, CheckCircle2, Mail } from "lucide-react";
+import { ShieldAlert, KeyRound, Trash2, Loader2, Edit3, User as UserIcon, CheckCircle2, Mail, Phone } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { useForm } from "react-hook-form";
@@ -29,16 +29,24 @@ const updateEmailSchema = z.object({
 });
 type UpdateEmailFormValues = z.infer<typeof updateEmailSchema>;
 
+const updateMobileSchema = z.object({
+  mobileNumber: z.string().trim().regex(/^\d{10}$/, { message: "Please enter a valid 10-digit mobile number." }),
+});
+type UpdateMobileFormValues = z.infer<typeof updateMobileSchema>;
+
 export default function ProfilePage() {
   const { user, firestoreUser, isLoading: authIsLoading } = useAuth();
   const { toast } = useToast();
-  const { isLoading: isLoadingAppSettings } = useApplicationConfig();
+  const { config, isLoading: isLoadingAppSettings } = useApplicationConfig();
 
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [isNameDialogOpen, setIsNameDialogOpen] = useState(false);
   const [isSubmittingName, setIsSubmittingName] = useState(false);
   const [isEmailDialogOpen, setIsEmailDialogOpen] = useState(false);
   const [isSubmittingEmail, setIsSubmittingEmail] = useState(false);
+  const [isMobileDialogOpen, setIsMobileDialogOpen] = useState(false);
+  const [isSubmittingMobile, setIsSubmittingMobile] = useState(false);
+  const [mobileNumber, setMobileNumber] = useState("");
   const [isSendingResetEmail, setIsSendingResetEmail] = useState(false);
   const [isSendingVerification, setIsSendingVerification] = useState(false);
   const [deletionRequest, setDeletionRequest] = useState<any>(null);
@@ -50,18 +58,59 @@ export default function ProfilePage() {
 
   const [activeTab, setActiveTab] = useState<string>("account");
 
+  const cleanPhoneNumber = useCallback((value: string, countryCode: string = "+91") => {
+    let cleaned = value.trim().replace(/\s+/g, '');
+    if (cleaned.startsWith('+')) {
+      if (cleaned.startsWith(countryCode)) {
+        cleaned = cleaned.substring(countryCode.length);
+      } else {
+        cleaned = cleaned.replace(/^\+\d+/, '');
+      }
+    } else if (cleaned.startsWith('0') && cleaned.length > 10) {
+      cleaned = cleaned.substring(1);
+    }
+    return cleaned.replace(/\D/g, '').slice(0, 10);
+  }, []);
+
   const nameForm = useForm<UpdateNameFormValues>({ resolver: zodResolver(updateNameSchema) });
   const emailForm = useForm<UpdateEmailFormValues>({ resolver: zodResolver(updateEmailSchema) });
+  const mobileForm = useForm<UpdateMobileFormValues>({ 
+    resolver: zodResolver(updateMobileSchema),
+    defaultValues: { mobileNumber: "" }
+  });
 
   useEffect(() => {
     if (user && firestoreUser) {
       nameForm.reset({ displayName: firestoreUser.displayName || user.displayName || "" });
       emailForm.reset({ email: firestoreUser.email || user.email || "" });
+      const initialMobile = firestoreUser.mobileNumber || user.phoneNumber || "";
+      setMobileNumber(initialMobile);
+      mobileForm.reset({
+        mobileNumber: cleanPhoneNumber(initialMobile, config?.defaultOtpCountryCode || '+91')
+      });
       setIsLoadingData(false);
     } else if (!authIsLoading && !user) {
       setIsLoadingData(false);
     }
-  }, [user, firestoreUser, authIsLoading, nameForm, emailForm]);
+  }, [user, firestoreUser, authIsLoading, nameForm, emailForm, mobileForm, config?.defaultOtpCountryCode, cleanPhoneNumber]);
+
+  useEffect(() => {
+    if (user?.uid) {
+      fetch(`/api/db/users?userId=${user.uid}`)
+        .then(res => res.json())
+        .then(json => {
+          if (json.success && json.user) {
+            if (json.user.mobileNumber) {
+              setMobileNumber(json.user.mobileNumber);
+              mobileForm.reset({
+                mobileNumber: cleanPhoneNumber(json.user.mobileNumber, config?.defaultOtpCountryCode || '+91')
+              });
+            }
+          }
+        })
+        .catch(err => console.error("Error fetching user details in profile:", err));
+    }
+  }, [user, config?.defaultOtpCountryCode, cleanPhoneNumber, mobileForm]);
 
   useEffect(() => {
     if (user?.uid) {
@@ -119,6 +168,33 @@ export default function ProfilePage() {
       }
     } finally {
       setIsSubmittingEmail(false);
+    }
+  };
+
+  const handleUpdateMobile = async (values: UpdateMobileFormValues) => {
+    if (!user) return;
+    setIsSubmittingMobile(true);
+    try {
+      const countryCode = config?.defaultOtpCountryCode || '+91';
+      const formattedNumber = `${countryCode}${values.mobileNumber.trim()}`;
+
+      const res = await fetch('/api/db/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: user.uid, mobileNumber: formattedNumber })
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to save mobile number.");
+      }
+
+      setMobileNumber(formattedNumber);
+      toast({ title: "Success", description: "Your mobile number has been updated." });
+      setIsMobileDialogOpen(false);
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "Could not update mobile number.", variant: "destructive" });
+    } finally {
+      setIsSubmittingMobile(false);
     }
   };
 
@@ -272,6 +348,32 @@ export default function ProfilePage() {
                   </Button>
                 </div>
 
+                <div className="flex items-center justify-between p-4 bg-secondary/10 rounded-2xl border border-primary/5">
+                  <div>
+                    <p className="text-xs text-muted-foreground uppercase font-bold">Mobile Number</p>
+                    <p className="text-sm font-semibold flex items-center gap-2">
+                      <Phone className="h-3.5 w-3.5 text-primary" />
+                      {mobileNumber ? (
+                        <span>{mobileNumber}</span>
+                      ) : (
+                        <span className="text-muted-foreground italic font-normal">Not provided</span>
+                      )}
+                    </p>
+                  </div>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => {
+                      mobileForm.reset({
+                        mobileNumber: cleanPhoneNumber(mobileNumber, config?.defaultOtpCountryCode || '+91')
+                      });
+                      setIsMobileDialogOpen(true);
+                    }}
+                  >
+                    <Edit3 className="h-4 w-4 mr-1" /> {mobileNumber ? 'Edit' : 'Add'}
+                  </Button>
+                </div>
+
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-secondary/10 rounded-2xl border border-primary/5">
                   <div>
                     <p className="text-xs text-muted-foreground uppercase font-bold">Email Address</p>
@@ -409,6 +511,61 @@ export default function ProfilePage() {
               <DialogFooter>
                 <DialogClose asChild><Button type="button" variant="outline" disabled={isSubmittingEmail}>Cancel</Button></DialogClose>
                 <Button type="submit" disabled={isSubmittingEmail}>{isSubmittingEmail && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Update Email</Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Mobile Number Dialog */}
+      <Dialog open={isMobileDialogOpen} onOpenChange={setIsMobileDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Update Mobile Number</DialogTitle>
+            <DialogDescription>Enter your 10-digit mobile number.</DialogDescription>
+          </DialogHeader>
+          <Form {...mobileForm}>
+            <form onSubmit={mobileForm.handleSubmit(handleUpdateMobile)} className="space-y-4 py-2">
+              <FormField 
+                control={mobileForm.control} 
+                name="mobileNumber" 
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel htmlFor="mobileNumber" className="flex items-center gap-2">
+                      <Phone className="h-4 w-4 text-primary" /> Mobile Number
+                    </FormLabel>
+                    <div className="flex items-center">
+                      <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-input bg-muted text-sm font-medium text-foreground h-10 select-none">
+                        {isLoadingAppSettings ? '+91' : (config?.defaultOtpCountryCode || '+91')}
+                      </span>
+                      <FormControl>
+                        <Input 
+                          id="mobileNumber"
+                          type="tel"
+                          maxLength={10}
+                          placeholder="10-digit mobile number" 
+                          {...field}
+                          onChange={(e) => {
+                            const cleaned = cleanPhoneNumber(e.target.value, config?.defaultOtpCountryCode || '+91');
+                            field.onChange(cleaned);
+                          }}
+                          className="rounded-l-none font-medium"
+                          disabled={isSubmittingMobile} 
+                        />
+                      </FormControl>
+                    </div>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <DialogFooter className="flex flex-row justify-end gap-2 pt-2">
+                <DialogClose asChild>
+                  <Button type="button" variant="outline" disabled={isSubmittingMobile}>Cancel</Button>
+                </DialogClose>
+                <Button type="submit" disabled={isSubmittingMobile}>
+                  {isSubmittingMobile && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Save Number
+                </Button>
               </DialogFooter>
             </form>
           </Form>
