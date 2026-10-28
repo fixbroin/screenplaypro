@@ -18,6 +18,7 @@ export async function POST(req: NextRequest) {
     const entries = zip.getEntries();
 
     const publicUploadsDir = path.join(process.cwd(), 'public', 'uploads');
+    const publicBannerDir = path.join(process.cwd(), 'public', 'banner');
     if (!fs.existsSync(publicUploadsDir)) {
       fs.mkdirSync(publicUploadsDir, { recursive: true });
     }
@@ -28,11 +29,18 @@ export async function POST(req: NextRequest) {
       if (entry.isDirectory) continue;
 
       let relativePath = entry.entryName.replace(/\\/g, '/');
-      if (relativePath.startsWith('uploads/')) {
-        relativePath = relativePath.replace(/^uploads\//, '');
+      let targetPath = '';
+
+      if (relativePath.startsWith('banner/')) {
+        const sub = relativePath.replace(/^banner\//, '');
+        targetPath = path.join(publicBannerDir, sub);
+      } else {
+        if (relativePath.startsWith('uploads/')) {
+          relativePath = relativePath.replace(/^uploads\//, '');
+        }
+        targetPath = path.join(publicUploadsDir, relativePath);
       }
 
-      const targetPath = path.join(publicUploadsDir, relativePath);
       const targetDir = path.dirname(targetPath);
 
       if (!fs.existsSync(targetDir)) {

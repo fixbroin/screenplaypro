@@ -92,75 +92,75 @@ export function hslStringToHex(hslString: string | null | undefined): string {
 }
 
 
-// Define the complete default HSL palettes based on globals.css
+// Define the complete default HSL palettes based on globals.css (New Premium Cinema Palette)
 export const DEFAULT_LIGHT_THEME_COLORS_HSL: Required<ThemePalette> = {
-  background: "196 67% 96%",
-  foreground: "210 10% 23%",
-  card: "0 0% 100%",
-  "card-foreground": "210 10% 23%",
+  background: "210 20% 98%", /* Studio Paper #F8FAFC */
+  foreground: "222 47% 11%", /* Deep Obsidian Slate #0F172A */
+  card: "0 0% 100%", /* Pure Crisp White */
+  "card-foreground": "222 47% 11%",
   popover: "0 0% 100%",
-  "popover-foreground": "210 10% 23%",
-  primary: "181 39% 45%",
+  "popover-foreground": "222 47% 11%",
+  primary: "243 75% 59%", /* Royal Cinema Indigo #4F46E5 */
   "primary-foreground": "0 0% 100%",
-  secondary: "196 50% 90%",
-  "secondary-foreground": "210 10% 23%",
-  muted: "196 50% 90%",
-  "muted-foreground": "210 10% 45%",
-  accent: "96 30% 42%",
+  secondary: "215 28% 94%", /* Soft Slate Mist #F1F5F9 */
+  "secondary-foreground": "222 47% 11%",
+  muted: "215 28% 94%",
+  "muted-foreground": "215 16% 47%", /* Sophisticated Editorial Gray #64748B */
+  accent: "38 92% 50%", /* Hollywood Cinema Amber / Gold #F59E0B */
   "accent-foreground": "0 0% 100%",
   destructive: "0 84.2% 60.2%",
   "destructive-foreground": "0 0% 98%",
-  border: "196 30% 85%",
-  input: "196 30% 88%",
-  ring: "181 39% 45%",
-  "chart-1": "12 76% 61%",
-  "chart-2": "173 58% 39%",
-  "chart-3": "197 37% 24%",
-  "chart-4": "43 74% 66%",
-  "chart-5": "27 87% 67%",
-  "sidebar-background": "0 0% 98%",
-  "sidebar-foreground": "240 5.3% 26.1%",
-  "sidebar-primary": "240 5.9% 10%",
-  "sidebar-primary-foreground": "0 0% 98%",
-  "sidebar-accent": "240 4.8% 95.9%",
-  "sidebar-accent-foreground": "240 5.9% 10%",
-  "sidebar-border": "220 13% 91%",
-  "sidebar-ring": "217.2 91.2% 59.8%",
+  border: "214 32% 91%", /* Hairline Slate Border #E2E8F0 */
+  input: "214 32% 91%",
+  ring: "243 75% 59%",
+  "chart-1": "243 75% 59%",
+  "chart-2": "38 92% 50%",
+  "chart-3": "173 58% 39%",
+  "chart-4": "215 16% 47%",
+  "chart-5": "0 84.2% 60.2%",
+  "sidebar-background": "0 0% 100%",
+  "sidebar-foreground": "222 47% 11%",
+  "sidebar-primary": "243 75% 59%",
+  "sidebar-primary-foreground": "0 0% 100%",
+  "sidebar-accent": "215 28% 94%",
+  "sidebar-accent-foreground": "222 47% 11%",
+  "sidebar-border": "214 32% 91%",
+  "sidebar-ring": "243 75% 59%",
 };
 
 export const DEFAULT_DARK_THEME_COLORS_HSL: Required<ThemePalette> = {
-  background: "210 10% 10%",
-  foreground: "196 67% 96%",
-  card: "210 10% 15%",
-  "card-foreground": "196 67% 96%",
-  popover: "210 10% 15%",
-  "popover-foreground": "196 67% 96%",
-  primary: "181 39% 55%",
-  "primary-foreground": "0 0% 10%",
-  secondary: "210 10% 25%",
-  "secondary-foreground": "196 67% 96%",
-  muted: "210 10% 25%",
-  "muted-foreground": "196 50% 70%",
-  accent: "96 30% 52%",
-  "accent-foreground": "0 0% 10%",
+  background: "224 71% 4%", /* Midnight OLED Obsidian #0B0F17 */
+  foreground: "210 40% 98%", /* Diamond Studio White #F8FAFC */
+  card: "222 47% 8%", /* Elevated Midnight Slate #111827 */
+  "card-foreground": "210 40% 98%",
+  popover: "222 47% 8%",
+  "popover-foreground": "210 40% 98%",
+  primary: "239 84% 67%", /* Luminous Electric Iris #818CF8 */
+  "primary-foreground": "224 71% 4%",
+  secondary: "217 33% 15%", /* Deep Midnight Slate #1E293B */
+  "secondary-foreground": "210 40% 98%",
+  muted: "217 33% 15%",
+  "muted-foreground": "215 20% 65%", /* Soft Silver Slate #94A3B8 */
+  accent: "38 92% 50%", /* Luminous Cinema Gold #F59E0B */
+  "accent-foreground": "0 0% 100%",
   destructive: "0 70% 50%",
   "destructive-foreground": "0 0% 98%",
-  border: "210 10% 30%",
-  input: "210 10% 30%",
-  ring: "181 39% 55%",
-  "chart-1": "220 70% 50%",
-  "chart-2": "160 60% 45%",
-  "chart-3": "30 80% 55%",
+  border: "217 33% 18%", /* Hairline Midnight Border #1E293B */
+  input: "217 33% 18%",
+  ring: "239 84% 67%",
+  "chart-1": "239 84% 67%",
+  "chart-2": "38 92% 50%",
+  "chart-3": "160 60% 45%",
   "chart-4": "280 65% 60%",
   "chart-5": "340 75% 55%",
-  "sidebar-background": "240 5.9% 10%",
-  "sidebar-foreground": "240 4.8% 95.9%",
-  "sidebar-primary": "224.3 76.3% 48%",
-  "sidebar-primary-foreground": "0 0% 100%",
-  "sidebar-accent": "240 3.7% 15.9%",
-  "sidebar-accent-foreground": "240 4.8% 95.9%",
-  "sidebar-border": "240 3.7% 15.9%",
-  "sidebar-ring": "217.2 91.2% 59.8%",
+  "sidebar-background": "224 71% 4%",
+  "sidebar-foreground": "210 40% 98%",
+  "sidebar-primary": "239 84% 67%",
+  "sidebar-primary-foreground": "224 71% 4%",
+  "sidebar-accent": "217 33% 15%",
+  "sidebar-accent-foreground": "210 40% 98%",
+  "sidebar-border": "217 33% 18%",
+  "sidebar-ring": "239 84% 67%",
 };
 
 // Deriving keys from an actual object helps with static analysis

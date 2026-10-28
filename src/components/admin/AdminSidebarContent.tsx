@@ -166,9 +166,9 @@ export default function AdminSidebarContent() {
           {navItems.map((item, index) => {
             if (item.type === 'separator') {
               return (
-                <div key={`sep-${index}`} className="px-4 py-4 mt-4 mb-1">
+                <div key={`sep-${index}`} className="px-3 py-3 mt-3 mb-1">
                   <div className="flex items-center gap-3">
-                    <span className="text-[10px] font-black text-accent uppercase tracking-[0.2em] whitespace-nowrap">{item.label}</span>
+                    <span className="text-[10px] font-black text-accent uppercase tracking-[0.2em] whitespace-nowrap group-data-[collapsible=icon]:hidden">{item.label}</span>
                     <div className="h-px w-full bg-accent/20" />
                   </div>
                 </div>
@@ -206,18 +206,19 @@ export default function AdminSidebarContent() {
         })}
         </SidebarMenu>
 
-        <div className="px-4 mt-8 mb-4">
-            <div className="flex items-center gap-3 mb-4">
-                <span className="text-[10px] font-black text-accent uppercase tracking-[0.2em] whitespace-nowrap">Cache Control</span>
+        <div className="px-2 mt-8 mb-4">
+            <div className="flex items-center gap-3 mb-4 px-2">
+                <span className="text-[10px] font-black text-accent uppercase tracking-[0.2em] whitespace-nowrap group-data-[collapsible=icon]:hidden">Cache Control</span>
                 <div className="h-px w-full bg-accent/20" />
             </div>
             <button
                 onClick={handleRefreshCache}
                 disabled={isRefreshing}
-                className="w-full flex items-center h-11 transition-all duration-300 rounded-xl px-4 group bg-destructive/10 text-destructive border border-destructive/20 hover:bg-destructive hover:text-white shadow-sm disabled:opacity-50"
+                title="Clear System Cache"
+                className="w-full flex items-center h-11 transition-all duration-300 rounded-xl px-3 group bg-destructive/10 text-destructive border border-destructive/20 hover:bg-destructive hover:text-white shadow-sm disabled:opacity-50 justify-start group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
             >
                 <RefreshCw className={cn("h-4 w-4 shrink-0 transition-transform duration-700", isRefreshing && "animate-spin")} />
-                <span className="ml-3 truncate font-bold text-sm">Clear System Cache</span>
+                <span className="ml-3 truncate font-bold text-sm group-data-[collapsible=icon]:hidden">Clear System Cache</span>
             </button>
         </div>
       </SidebarContent>

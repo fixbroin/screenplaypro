@@ -12,6 +12,11 @@ export async function GET() {
       zip.addLocalFolder(uploadsDir, 'uploads');
     }
 
+    const bannerDir = path.join(process.cwd(), 'public', 'banner');
+    if (fs.existsSync(bannerDir)) {
+      zip.addLocalFolder(bannerDir, 'banner');
+    }
+
     const buffer = zip.toBuffer();
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const filename = `media-storage-backup-${timestamp}.zip`;

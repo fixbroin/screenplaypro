@@ -49,7 +49,7 @@ const Logo = ({ className = "", size = "normal", logoUrl, websiteName, href }: L
           priority
         />
       </div>
-      <span className={cn("font-headline font-bold", textSizeClass, "group-data-[collapsible=icon]:hidden")}>
+      <span className={cn("font-headline font-bold whitespace-nowrap overflow-hidden transition-all duration-300", textSizeClass, "group-data-[collapsible=icon]:hidden")}>
         {finalWebsiteName}
       </span>
     </Link>

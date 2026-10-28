@@ -6,143 +6,235 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Database, UploadCloud, Download, Loader2, AlertTriangle, FolderArchive } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { 
+  Database, 
+  UploadCloud, 
+  Download, 
+  Loader2, 
+  AlertTriangle, 
+  FolderArchive, 
+  CheckCircle2, 
+  Layers, 
+  Sparkles, 
+  Image as ImageIcon,
+  ShieldAlert
+} from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-
-// Define the list of collections/tables to be exported.
-const COLLECTIONS_TO_EXPORT = [
-  "users",
-  "scripts",
-  "userSubscriptions",
-  "webSettings",
-  "adminSubscriptionPlans",
-  "adminFAQs",
-  "adminPopups",
-  "adminPromoCodes",
-  "adminReviews",
-  "adminSlideshows",
-  "contactUsSubmissions",
-  "popupSubmissions",
-  "accountDeletionRequests",
-  "seoOverrides",
-  "userNotifications",
-  "userActivities"
-];
-
 
 export default function DatabaseToolsPage() {
   const { toast } = useToast();
-  const [isExporting, setIsExporting] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
-  const [importFile, setImportFile] = useState<File | null>(null);
 
-  const handleExport = async () => {
-    setIsExporting(true);
-    toast({ title: "Starting Export", description: "Fetching database records from Hostinger MySQL. This may take a moment..." });
+  // 1. Full System Master Backup (Database + Media ZIP)
+  const [isExportingSystem, setIsExportingSystem] = useState(false);
+  const [isImportingSystem, setIsImportingSystem] = useState(false);
+  const [systemRestoreFile, setSystemRestoreFile] = useState<File | null>(null);
+  const [systemRestoreReport, setSystemRestoreReport] = useState<any | null>(null);
 
-    const exportData: Record<string, any[]> = {};
+  // 2. MySQL Database Only (JSON)
+  const [isExportingDb, setIsExportingDb] = useState(false);
+  const [isImportingDb, setIsImportingDb] = useState(false);
+  const [dbImportFile, setDbImportFile] = useState<File | null>(null);
+  const [dbRestoreReport, setDbRestoreReport] = useState<any | null>(null);
+
+  // 3. Media Storage Only (ZIP)
+  const [isExportingStorage, setIsExportingStorage] = useState(false);
+  const [isImportingStorage, setIsImportingStorage] = useState(false);
+  const [storageRestoreFile, setStorageRestoreFile] = useState<File | null>(null);
+
+  // ----------------------------------------------------
+  // Handler 1: Master Full System Backup (ZIP)
+  // ----------------------------------------------------
+  const handleSystemExport = async () => {
+    setIsExportingSystem(true);
+    toast({
+      title: "Generating Complete System Backup",
+      description: "Extracting all MySQL tables and packaging all media images (slides, ads, branding) into a ZIP archive..."
+    });
+
     try {
-      for (const collectionName of COLLECTIONS_TO_EXPORT) {
-        const res = await fetch(`/api/db/collections?name=${collectionName}`);
-        const json = await res.json();
-        if (json.success && Array.isArray(json.data)) {
-          exportData[collectionName] = json.data;
-        } else {
-          exportData[collectionName] = [];
-        }
+      const res = await fetch('/api/admin/system/backup');
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Failed to create system backup archive');
       }
 
-      const jsonString = JSON.stringify(exportData, null, 2);
-      const blob = new Blob([jsonString], { type: "application/json" });
+      const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      link.download = `mysql-database-backup-${timestamp}.json`;
+      link.download = `full-system-complete-backup-${timestamp}.zip`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
 
-      toast({ title: "Export Successful 🎉", description: `Hostinger MySQL database snapshot downloaded successfully.` });
-    } catch (error) {
-      console.error("Error exporting database:", error);
-      toast({ title: "Export Failed", description: (error as Error).message || "Could not export MySQL database.", variant: "destructive" });
+      toast({
+        title: "Complete System Backup Downloaded 🎉",
+        description: "Your full MySQL database snapshot and all uploaded media files have been saved."
+      });
+    } catch (error: any) {
+      console.error("Error creating system backup:", error);
+      toast({
+        title: "System Backup Failed",
+        description: error.message || "Could not generate full system backup.",
+        variant: "destructive"
+      });
     } finally {
-      setIsExporting(false);
+      setIsExportingSystem(false);
     }
   };
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (event.target.files && event.target.files[0]) {
-      setImportFile(event.target.files[0]);
-    }
-  };
-
-  const handleImport = async () => {
-    if (!importFile) {
-      toast({ title: "No File Selected", description: "Please select a JSON file to import.", variant: "destructive" });
+  const handleSystemRestore = async () => {
+    if (!systemRestoreFile) {
+      toast({ title: "No ZIP File Selected", description: "Please select a full system backup ZIP file.", variant: "destructive" });
       return;
     }
 
-    setIsImporting(true);
-    toast({ title: "Starting Import", description: "Importing data into Hostinger MySQL. Please do not close this window..." });
+    setIsImportingSystem(true);
+    setSystemRestoreReport(null);
+    toast({
+      title: "Restoring Complete System",
+      description: "Unpacking media images into /uploads and restoring all database tables into MySQL. Please wait..."
+    });
 
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      try {
-        const fileContent = event.target?.result as string;
-        const importData = JSON.parse(fileContent);
+    try {
+      const formData = new FormData();
+      formData.append('file', systemRestoreFile);
 
-        let totalOperations = 0;
-        
-        for (const collectionName in importData) {
-          if (Object.prototype.hasOwnProperty.call(importData, collectionName)) {
-            const documents = importData[collectionName];
-            if (Array.isArray(documents)) {
-              for (const docData of documents) {
-                const docId = docData.id || docData._id || `doc_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-                await fetch('/api/db/collections', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ collectionName, id: docId, data: docData })
-                });
-                totalOperations++;
-              }
-            }
-          }
-        }
+      const res = await fetch('/api/admin/system/restore', {
+        method: 'POST',
+        body: formData,
+      });
 
-        toast({ title: "Import Successful 🎉", description: `Successfully restored ${totalOperations} records into Hostinger MySQL.` });
-      } catch (error) {
-        console.error("Error importing database:", error);
-        toast({ title: "Import Failed", description: (error as Error).message || "Invalid JSON backup file.", variant: "destructive" });
-      } finally {
-        setIsImporting(false);
-        setImportFile(null);
-        const fileInput = document.getElementById('import-file-input') as HTMLInputElement;
-        if (fileInput) fileInput.value = '';
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to restore system backup.');
       }
-    };
-    reader.onerror = () => {
-        toast({ title: "File Read Error", description: "Could not read the selected file.", variant: "destructive" });
-        setIsImporting(false);
-    };
-    reader.readAsText(importFile);
+
+      setSystemRestoreReport(data);
+      toast({
+        title: "Full System Restore Successful 🎉",
+        description: data.message || "All images and database tables restored successfully!"
+      });
+      setSystemRestoreFile(null);
+      const fileInput = document.getElementById('system-restore-file-input') as HTMLInputElement;
+      if (fileInput) fileInput.value = '';
+    } catch (error: any) {
+      console.error("Error restoring system backup:", error);
+      toast({
+        title: "System Restore Failed",
+        description: error.message || "Could not unpack and restore system backup.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsImportingSystem(false);
+    }
   };
 
-  const [isExportingStorage, setIsExportingStorage] = useState(false);
-  const [isImportingStorage, setIsImportingStorage] = useState(false);
-  const [storageRestoreFile, setStorageRestoreFile] = useState<File | null>(null);
+  // ----------------------------------------------------
+  // Handler 2: Database Snapshot (JSON)
+  // ----------------------------------------------------
+  const handleDbExport = async () => {
+    setIsExportingDb(true);
+    toast({
+      title: "Exporting Database Tables",
+      description: "Querying all MySQL tables (slideshows, ads, scripts, users, settings, plans, etc.)..."
+    });
 
+    try {
+      const res = await fetch('/api/admin/database/backup');
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Failed to export database snapshot');
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      link.download = `mysql-database-complete-backup-${timestamp}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      toast({
+        title: "Database Export Successful 🎉",
+        description: "Complete MySQL database snapshot JSON downloaded successfully."
+      });
+    } catch (error: any) {
+      console.error("Error exporting database:", error);
+      toast({
+        title: "Database Export Failed",
+        description: error.message || "Could not export database snapshot.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsExportingDb(false);
+    }
+  };
+
+  const handleDbImport = async () => {
+    if (!dbImportFile) {
+      toast({ title: "No JSON File Selected", description: "Please select a JSON database backup file to import.", variant: "destructive" });
+      return;
+    }
+
+    setIsImportingDb(true);
+    setDbRestoreReport(null);
+    toast({
+      title: "Restoring Database Tables",
+      description: "Inserting and updating records directly in MySQL tables..."
+    });
+
+    try {
+      const formData = new FormData();
+      formData.append('file', dbImportFile);
+
+      const res = await fetch('/api/admin/database/restore', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to restore database records.');
+      }
+
+      setDbRestoreReport(data);
+      toast({
+        title: "Database Restore Successful 🎉",
+        description: data.message || `Restored ${data.totalRestored || 0} records across tables.`
+      });
+      setDbImportFile(null);
+      const fileInput = document.getElementById('db-import-file-input') as HTMLInputElement;
+      if (fileInput) fileInput.value = '';
+    } catch (error: any) {
+      console.error("Error restoring database:", error);
+      toast({
+        title: "Database Restore Failed",
+        description: error.message || "Invalid JSON backup file or database error.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsImportingDb(false);
+    }
+  };
+
+  // ----------------------------------------------------
+  // Handler 3: Media Storage Only (ZIP)
+  // ----------------------------------------------------
   const handleStorageExport = async () => {
     setIsExportingStorage(true);
-    toast({ title: "Creating Storage Backup Zip", description: "Packaging all uploaded images and folder structures into a ZIP file..." });
+    toast({ title: "Creating Media Storage ZIP", description: "Compressing all files in /uploads (ads, slides, branding)..." });
 
     try {
       const res = await fetch('/api/admin/storage/backup');
       if (!res.ok) {
-        const errJson = await res.json();
+        const errJson = await res.json().catch(() => ({}));
         throw new Error(errJson.error || 'Failed to create storage backup');
       }
 
@@ -157,18 +249,12 @@ export default function DatabaseToolsPage() {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
 
-      toast({ title: "Storage Backup Downloaded 🎉", description: "All images and folder structures have been exported as a ZIP archive." });
-    } catch (error) {
+      toast({ title: "Media Storage ZIP Downloaded 🎉", description: "All uploaded images and folder structures have been exported." });
+    } catch (error: any) {
       console.error("Error backing up storage:", error);
-      toast({ title: "Storage Export Failed", description: (error as Error).message || "Could not create zip backup.", variant: "destructive" });
+      toast({ title: "Storage Export Failed", description: error.message || "Could not create ZIP backup.", variant: "destructive" });
     } finally {
       setIsExportingStorage(false);
-    }
-  };
-
-  const handleStorageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setStorageRestoreFile(e.target.files[0]);
     }
   };
 
@@ -179,7 +265,7 @@ export default function DatabaseToolsPage() {
     }
 
     setIsImportingStorage(true);
-    toast({ title: "Restoring Storage Backup", description: "Unpacking media files into corresponding folder locations..." });
+    toast({ title: "Restoring Media Storage", description: "Unpacking media files into corresponding folder locations..." });
 
     try {
       const formData = new FormData();
@@ -195,143 +281,290 @@ export default function DatabaseToolsPage() {
         throw new Error(data.error || 'Failed to restore storage files.');
       }
 
-      toast({ title: "Storage Restore Successful 🎉", description: data.message || "All images restored to their original folders." });
+      toast({ title: "Media Restore Successful 🎉", description: data.message || "All images restored to their original folders." });
       setStorageRestoreFile(null);
       const fileInput = document.getElementById('storage-restore-file-input') as HTMLInputElement;
       if (fileInput) fileInput.value = '';
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error restoring storage:", error);
-      toast({ title: "Storage Restore Failed", description: (error as Error).message || "Could not unpack ZIP file.", variant: "destructive" });
+      toast({ title: "Storage Restore Failed", description: error.message || "Could not unpack ZIP file.", variant: "destructive" });
     } finally {
       setIsImportingStorage(false);
     }
   };
 
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-2xl flex items-center">
-            <Database className="mr-2 h-6 w-6 text-primary" /> Database & Storage Maintenance Tools
-          </CardTitle>
-          <CardDescription>
-            Backup and restore your Hostinger MySQL database snapshot and local media storage folders (uploaded images).
-          </CardDescription>
-        </CardHeader>
-      </Card>
+    <div className="space-y-8 max-w-5xl mx-auto pb-12">
+      {/* Header */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 text-primary">
+          <Database className="h-6 w-6" />
+          <span className="text-xs font-black uppercase tracking-widest">Hostinger MySQL & Storage Maintenance</span>
+        </div>
+        <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-foreground">
+          Backup & Restore Center
+        </h1>
+        <p className="text-muted-foreground text-sm max-w-2xl">
+          Create complete, reliable snapshots of your entire application: all database tables (slideshows, ads, screenplays, users, settings, subscriptions) and all uploaded media files.
+        </p>
+      </div>
 
-      {/* STORAGE & MEDIA BACKUP CARD */}
-      <Card className="border-primary/20 bg-primary/5">
+      {/* ---------------------------------------------------- */}
+      {/* SECTION 1: MASTER ALL-IN-ONE BACKUP (RECOMMENDED)   */}
+      {/* ---------------------------------------------------- */}
+      <Card className="border-2 border-primary/30 bg-primary/[0.03] shadow-lg relative overflow-hidden">
+        <div className="absolute top-0 right-0 p-4">
+          <Badge className="bg-primary text-primary-foreground font-black uppercase text-[10px] tracking-wider flex items-center gap-1 shadow-sm">
+            <Sparkles className="w-3 h-3" /> Recommended
+          </Badge>
+        </div>
+
         <CardHeader>
-          <CardTitle className="text-xl flex items-center">
-            <FolderArchive className="mr-2 h-5 w-5 text-primary" /> Media Storage & Images Backup (ZIP)
+          <CardTitle className="text-2xl flex items-center gap-2">
+            <Layers className="h-6 w-6 text-primary" />
+            Complete Full System Backup (Database + All Media Images)
           </CardTitle>
-          <CardDescription>
-            Package all uploaded images, branding logos, blog covers, and assets with their folder structures into a single downloadable ZIP file.
+          <CardDescription className="text-sm">
+            Packages the entire MySQL database snapshot (all tables) <strong>AND</strong> all uploaded media images (<code className="text-primary font-mono text-xs">/uploads/ads/</code>, <code className="text-primary font-mono text-xs">/uploads/slideshows/</code>, <code className="text-primary font-mono text-xs">/uploads/web-settings/</code>) into a single master ZIP file.
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <Alert>
-            <AlertTriangle className="h-4 w-4" />
-            <AlertTitle>Image Storage Backup</AlertTitle>
-            <AlertDescription>
-              Clicking backup will compress all files inside <code>/uploads</code> (e.g. <code>/uploads/web-settings/</code>, <code>/uploads/blog/</code>) preserving exact directory structures.
-            </AlertDescription>
-          </Alert>
+
+        <CardContent className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Master Export */}
+            <div className="p-5 rounded-2xl bg-card border border-border/80 flex flex-col justify-between space-y-4">
+              <div>
+                <div className="flex items-center gap-2 mb-2 font-bold text-base text-foreground">
+                  <Download className="w-5 h-5 text-primary" />
+                  <span>Download Full System Backup</span>
+                </div>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Generates a single master archive containing all database tables (slideshows, ads, scripts, users, settings, plans) alongside all image assets. Ideal for full site replication or server migration.
+                </p>
+              </div>
+              <Button 
+                onClick={handleSystemExport} 
+                disabled={isExportingSystem} 
+                className="w-full font-bold shadow-md h-11"
+              >
+                {isExportingSystem ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+                {isExportingSystem ? "Packaging Full Backup ZIP..." : "Download Complete System ZIP"}
+              </Button>
+            </div>
+
+            {/* Master Restore */}
+            <div className="p-5 rounded-2xl bg-card border border-border/80 flex flex-col justify-between space-y-4">
+              <div>
+                <div className="flex items-center gap-2 mb-2 font-bold text-base text-foreground">
+                  <UploadCloud className="w-5 h-5 text-primary" />
+                  <span>Restore Full System Backup</span>
+                </div>
+                <p className="text-xs text-muted-foreground leading-relaxed mb-3">
+                  Upload a previously exported complete system ZIP file to automatically unpack all images back into their exact folders and restore all MySQL database records.
+                </p>
+                <div className="space-y-1.5">
+                  <Label htmlFor="system-restore-file-input" className="text-xs font-semibold">Select Full System ZIP File</Label>
+                  <Input 
+                    id="system-restore-file-input" 
+                    type="file" 
+                    accept=".zip" 
+                    onChange={(e) => setSystemRestoreFile(e.target.files?.[0] || null)} 
+                    disabled={isImportingSystem} 
+                    className="text-xs file:text-xs file:font-semibold"
+                  />
+                </div>
+              </div>
+              <Button 
+                onClick={handleSystemRestore} 
+                disabled={isImportingSystem || !systemRestoreFile} 
+                variant="default"
+                className="w-full font-bold h-11"
+              >
+                {isImportingSystem ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
+                {isImportingSystem ? "Restoring System..." : "Restore Everything from ZIP"}
+              </Button>
+            </div>
+          </div>
+
+          {/* Master Restore Report Details */}
+          {systemRestoreReport && (
+            <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-foreground space-y-2">
+              <div className="flex items-center gap-2 font-bold text-emerald-600 dark:text-emerald-400 text-sm">
+                <CheckCircle2 className="w-4 h-4" />
+                <span>Full System Restore Completed Successfully</span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Restored <strong>{systemRestoreReport.restoredImagesCount || 0}</strong> media files into folders and <strong>{systemRestoreReport.database?.totalRestored || 0}</strong> database records.
+              </p>
+              {systemRestoreReport.database?.breakdown && (
+                <div className="flex flex-wrap gap-2 pt-2">
+                  {Object.entries(systemRestoreReport.database.breakdown).map(([table, count]: [string, any]) => (
+                    <Badge key={table} variant="outline" className="text-[11px] bg-background font-mono">
+                      {table}: {count}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </CardContent>
-        <CardFooter>
-          <Button onClick={handleStorageExport} disabled={isExportingStorage} className="font-semibold">
-            {isExportingStorage ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-            {isExportingStorage ? "Zipping Images..." : "Backup All Images to ZIP"}
-          </Button>
-        </CardFooter>
       </Card>
 
-      {/* STORAGE & MEDIA RESTORE CARD */}
-      <Card className="border-primary/20 bg-card">
+      {/* ---------------------------------------------------- */}
+      {/* SECTION 2: COMPLETE DATABASE SNAPSHOT (JSON)        */}
+      {/* ---------------------------------------------------- */}
+      <Card className="border border-border/80 shadow-md">
         <CardHeader>
-          <CardTitle className="text-xl flex items-center">
-            <FolderArchive className="mr-2 h-5 w-5 text-primary" /> Restore Media Storage & Images (ZIP)
+          <CardTitle className="text-xl flex items-center gap-2">
+            <Database className="h-5 w-5 text-primary" />
+            MySQL Database Complete Snapshot (JSON)
           </CardTitle>
           <CardDescription>
-            Select a previously exported ZIP backup to unpack and restore images back into their exact relative folder locations.
+            Directly export and restore all rows across all MySQL tables: <strong>slideshows</strong>, <strong>ads & feature settings (app_settings)</strong>, <strong>screenplays (scripts)</strong>, <strong>users</strong>, <strong>web settings</strong>, <strong>subscription plans</strong>, and <strong>customer collections</strong>.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <Alert variant="destructive">
-            <AlertTriangle className="h-4 w-4" />
-            <AlertTitle>Restore Directory Confirmation</AlertTitle>
-            <AlertDescription>
-              Restoring from a ZIP file will write all contained images directly back into their matching target folders inside <code>public/uploads</code>. Existing images with matching filenames will be updated.
-            </AlertDescription>
-          </Alert>
-          <div className="space-y-2">
-            <Label htmlFor="storage-restore-file-input">Select ZIP Storage Backup File</Label>
-            <Input id="storage-restore-file-input" type="file" accept=".zip" onChange={handleStorageFileChange} disabled={isImportingStorage} />
+        <CardContent className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* DB Export */}
+            <div className="p-5 rounded-2xl bg-secondary/15 border border-border/60 flex flex-col justify-between space-y-4">
+              <div>
+                <h3 className="font-bold text-sm mb-1">Export Database Tables (JSON)</h3>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Downloads a JSON snapshot of all active tables, including slides, ads, scripts, and users, ensuring exact primary keys and configuration data.
+                </p>
+              </div>
+              <Button 
+                onClick={handleDbExport} 
+                disabled={isExportingDb} 
+                variant="outline"
+                className="w-full font-bold h-10 border-primary/20 hover:bg-primary/5"
+              >
+                {isExportingDb ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+                {isExportingDb ? "Exporting Database Tables..." : "Export MySQL Database JSON"}
+              </Button>
+            </div>
+
+            {/* DB Import */}
+            <div className="p-5 rounded-2xl bg-secondary/15 border border-border/60 flex flex-col justify-between space-y-4">
+              <div>
+                <h3 className="font-bold text-sm mb-1">Restore Database Tables (JSON)</h3>
+                <p className="text-xs text-muted-foreground leading-relaxed mb-3">
+                  Upload a previously exported database JSON file. It maps records directly into their respective MySQL tables using safe upsert operations.
+                </p>
+                <div className="space-y-1.5">
+                  <Label htmlFor="db-import-file-input" className="text-xs font-semibold">Select JSON Backup File</Label>
+                  <Input 
+                    id="db-import-file-input" 
+                    type="file" 
+                    accept=".json" 
+                    onChange={(e) => setDbImportFile(e.target.files?.[0] || null)} 
+                    disabled={isImportingDb}
+                    className="text-xs file:text-xs file:font-semibold"
+                  />
+                </div>
+              </div>
+              <Button 
+                onClick={handleDbImport} 
+                disabled={isImportingDb || !dbImportFile} 
+                variant="outline"
+                className="w-full font-bold h-10 border-primary/20 hover:bg-primary/5"
+              >
+                {isImportingDb ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
+                {isImportingDb ? "Restoring Records..." : "Import & Restore Database JSON"}
+              </Button>
+            </div>
+          </div>
+
+          {/* DB Restore Report Details */}
+          {dbRestoreReport && (
+            <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-foreground space-y-2">
+              <div className="flex items-center gap-2 font-bold text-emerald-600 dark:text-emerald-400 text-sm">
+                <CheckCircle2 className="w-4 h-4" />
+                <span>Database Tables Restored Successfully</span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Total <strong>{dbRestoreReport.totalRestored || 0}</strong> records were updated or inserted across tables:
+              </p>
+              {dbRestoreReport.breakdown && (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {Object.entries(dbRestoreReport.breakdown).map(([table, count]: [string, any]) => (
+                    <Badge key={table} variant="outline" className="text-[11px] bg-background font-mono">
+                      {table}: {count}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ---------------------------------------------------- */}
+      {/* SECTION 3: MEDIA STORAGE & IMAGES (ZIP)              */}
+      {/* ---------------------------------------------------- */}
+      <Card className="border border-border/80 shadow-md">
+        <CardHeader>
+          <CardTitle className="text-xl flex items-center gap-2">
+            <ImageIcon className="h-5 w-5 text-primary" />
+            Media Storage & Uploaded Images (ZIP)
+          </CardTitle>
+          <CardDescription>
+            Backup and restore only the uploaded images (<code className="text-xs font-mono">/uploads/ads/</code>, <code className="text-xs font-mono">/uploads/slideshows/</code>, <code className="text-xs font-mono">/uploads/web-settings/</code>) without altering database records.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Storage Export */}
+            <div className="p-5 rounded-2xl bg-secondary/15 border border-border/60 flex flex-col justify-between space-y-4">
+              <div>
+                <h3 className="font-bold text-sm mb-1">Export Uploaded Images (ZIP)</h3>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Compresses all media assets inside the local public uploads directory into a standalone ZIP file.
+                </p>
+              </div>
+              <Button 
+                onClick={handleStorageExport} 
+                disabled={isExportingStorage} 
+                variant="outline"
+                className="w-full font-bold h-10 border-primary/20 hover:bg-primary/5"
+              >
+                {isExportingStorage ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+                {isExportingStorage ? "Zipping Images..." : "Backup All Images to ZIP"}
+              </Button>
+            </div>
+
+            {/* Storage Restore */}
+            <div className="p-5 rounded-2xl bg-secondary/15 border border-border/60 flex flex-col justify-between space-y-4">
+              <div>
+                <h3 className="font-bold text-sm mb-1">Restore Uploaded Images (ZIP)</h3>
+                <p className="text-xs text-muted-foreground leading-relaxed mb-3">
+                  Upload a previously exported media storage ZIP to unpack and write images back into their corresponding folders.
+                </p>
+                <div className="space-y-1.5">
+                  <Label htmlFor="storage-restore-file-input" className="text-xs font-semibold">Select Media ZIP File</Label>
+                  <Input 
+                    id="storage-restore-file-input" 
+                    type="file" 
+                    accept=".zip" 
+                    onChange={(e) => setStorageRestoreFile(e.target.files?.[0] || null)} 
+                    disabled={isImportingStorage}
+                    className="text-xs file:text-xs file:font-semibold"
+                  />
+                </div>
+              </div>
+              <Button 
+                onClick={handleStorageRestore} 
+                disabled={isImportingStorage || !storageRestoreFile} 
+                variant="outline"
+                className="w-full font-bold h-10 border-primary/20 hover:bg-primary/5"
+              >
+                {isImportingStorage ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
+                {isImportingStorage ? "Unpacking Images..." : "Restore Images from ZIP"}
+              </Button>
+            </div>
           </div>
         </CardContent>
-        <CardFooter>
-          <Button onClick={handleStorageRestore} disabled={isImportingStorage || !storageRestoreFile} variant="default" className="font-semibold">
-            {isImportingStorage ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
-            {isImportingStorage ? "Unpacking Images..." : "Restore Images from ZIP"}
-          </Button>
-        </CardFooter>
-      </Card>
-
-      {/* MYSQL DATABASE EXPORT CARD */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Export MySQL Database</CardTitle>
-          <CardDescription>
-            Download a complete snapshot of all specified database tables and collections as a single JSON file for backups or data migration.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-           <Alert>
-              <AlertTriangle className="h-4 w-4" />
-              <AlertTitle>Important Note on Exporting</AlertTitle>
-              <AlertDescription>
-                This tool exports all application data from Hostinger MySQL (users, scripts, settings, subscriptions, reviews, popups, and inquiries) into a single downloadable JSON backup snapshot.
-              </AlertDescription>
-            </Alert>
-        </CardContent>
-        <CardFooter>
-          <Button onClick={handleExport} disabled={isExporting}>
-            {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-            {isExporting ? "Exporting MySQL..." : "Export MySQL Database to JSON"}
-          </Button>
-        </CardFooter>
-      </Card>
-
-      {/* MYSQL DATABASE IMPORT CARD */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Import MySQL Database</CardTitle>
-          <CardDescription>
-            Restore data into Hostinger MySQL from a JSON file previously exported using this tool.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-           <Alert variant="destructive">
-              <AlertTriangle className="h-4 w-4" />
-              <AlertTitle>Warning: This Action Updates Existing Records</AlertTitle>
-              <AlertDescription>
-                Importing will <span className="font-bold">overwrite or update</span> existing MySQL database records with matching IDs in your target collections. It is highly recommended to perform an export backup first.
-              </AlertDescription>
-            </Alert>
-            <div className="space-y-2">
-                <Label htmlFor="import-file-input">Select JSON Backup File</Label>
-                <Input id="import-file-input" type="file" accept=".json" onChange={handleFileChange} disabled={isImporting} />
-            </div>
-        </CardContent>
-        <CardFooter>
-          <Button onClick={handleImport} disabled={isImporting || !importFile}>
-            {isImporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
-            {isImporting ? "Restoring Data..." : "Import & Restore MySQL Data"}
-          </Button>
-        </CardFooter>
       </Card>
     </div>
   );
 }
-

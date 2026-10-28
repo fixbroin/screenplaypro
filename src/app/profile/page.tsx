@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/useAuth";
-import { ShieldAlert, KeyRound, Trash2, Loader2, Edit3, User as UserIcon, CheckCircle2, Mail, Phone } from "lucide-react";
+import { ShieldAlert, KeyRound, Trash2, Loader2, Edit3, User as UserIcon, CheckCircle2, Mail, Phone, Shield, ArrowRight, Sparkles } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { useForm } from "react-hook-form";
@@ -26,6 +26,8 @@ import {
   validatePhoneNumber,
   cleanPhoneDigits,
 } from '@/lib/countryPhoneData';
+import { ADMIN_EMAIL } from '@/lib/constants';
+import Link from 'next/link';
 
 const updateNameSchema = z.object({
   displayName: z.string().min(2, { message: "Name must be at least 2 characters." }).max(50, "Name too long."),
@@ -46,6 +48,11 @@ export default function ProfilePage() {
   const { user, firestoreUser, isLoading: authIsLoading } = useAuth();
   const { toast } = useToast();
   const { config, isLoading: isLoadingAppSettings } = useApplicationConfig();
+
+  const isAdmin = Boolean(
+    (user?.email && user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase()) ||
+    firestoreUser?.roles?.includes('admin')
+  );
 
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [isNameDialogOpen, setIsNameDialogOpen] = useState(false);
@@ -75,11 +82,13 @@ export default function ProfilePage() {
   });
 
   useEffect(() => {
-    if (user && firestoreUser) {
-      nameForm.reset({ displayName: firestoreUser.displayName || user.displayName || "" });
-      emailForm.reset({ email: firestoreUser.email || user.email || "" });
-      const initialMobile = firestoreUser.mobileNumber || user.phoneNumber || "";
+    if (user && !authIsLoading) {
+      const displayName = firestoreUser?.displayName || user.displayName || (isAdmin ? "Administrator" : "User");
+      const email = firestoreUser?.email || user.email || "";
+      const initialMobile = firestoreUser?.mobileNumber || user.phoneNumber || "";
       const parsed = findCountryFromPhoneNumber(initialMobile);
+      nameForm.reset({ displayName });
+      emailForm.reset({ email });
       setMobileNumber(initialMobile);
       setSelectedMobileCountry(parsed.country);
       mobileForm.reset({ mobileNumber: parsed.nationalNumber });
@@ -87,7 +96,7 @@ export default function ProfilePage() {
     } else if (!authIsLoading && !user) {
       setIsLoadingData(false);
     }
-  }, [user, firestoreUser, authIsLoading, nameForm, emailForm, mobileForm]);
+  }, [user, firestoreUser, authIsLoading, isAdmin, nameForm, emailForm, mobileForm]);
 
   useEffect(() => {
     if (user?.uid) {
@@ -101,14 +110,22 @@ export default function ProfilePage() {
               setSelectedMobileCountry(parsed.country);
               mobileForm.reset({ mobileNumber: parsed.nationalNumber });
             }
+            if (json.user.displayName) {
+              nameForm.reset({ displayName: json.user.displayName });
+            }
           }
         })
-        .catch(err => console.error("Error fetching user details in profile:", err));
+        .catch(err => console.error("Error fetching user details in profile:", err))
+        .finally(() => {
+          setIsLoadingData(false);
+        });
+    } else if (!authIsLoading) {
+      setIsLoadingData(false);
     }
-  }, [user, mobileForm]);
+  }, [user, authIsLoading, mobileForm, nameForm]);
 
   useEffect(() => {
-    if (user?.uid) {
+    if (user?.uid && !isAdmin) {
       fetch(`/api/db/collections?name=accountDeletionRequests&id=${user.uid}`)
         .then(res => res.json())
         .then(json => {
@@ -122,7 +139,7 @@ export default function ProfilePage() {
     } else {
       setDeletionRequest(null);
     }
-  }, [user]);
+  }, [user, isAdmin]);
 
   const handleUpdateName = async (values: UpdateNameFormValues) => {
     if (!user || !auth.currentUser) return;
@@ -132,7 +149,12 @@ export default function ProfilePage() {
       await fetch('/api/db/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: user.uid, displayName: values.displayName })
+        body: JSON.stringify({ 
+          id: user.uid, 
+          email: user.email || undefined,
+          displayName: values.displayName,
+          roles: isAdmin ? ['admin', 'user'] : undefined
+        })
       });
       toast({ title: "Success", description: "Your name has been updated." });
       setIsNameDialogOpen(false);
@@ -184,7 +206,13 @@ export default function ProfilePage() {
       const res = await fetch('/api/db/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: user.uid, mobileNumber: formattedNumber })
+        body: JSON.stringify({ 
+          id: user.uid, 
+          email: user.email || undefined,
+          displayName: user.displayName || undefined,
+          roles: isAdmin ? ['admin', 'user'] : undefined,
+          mobileNumber: formattedNumber 
+        })
       });
 
       if (!res.ok) {
@@ -307,15 +335,37 @@ export default function ProfilePage() {
         
         {/* Dynamic & Premium Page Header */}
         <div className="space-y-1.5 mb-8">
-          <div className="flex items-center space-x-2 text-primary">
-            <div className="h-2 w-2 rounded-full bg-primary animate-pulse" />
-            <span className="text-[10px] font-black uppercase tracking-[0.2em]">User Settings</span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2 text-primary">
+              <div className="h-2 w-2 rounded-full bg-primary animate-pulse" />
+              <span className="text-[10px] font-black uppercase tracking-[0.2em]">
+                {isAdmin ? "Administrator Settings" : "User Settings"}
+              </span>
+            </div>
+            {isAdmin && (
+              <Badge className="bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 font-bold uppercase text-[10px] tracking-wider flex items-center gap-1 px-2.5 py-0.5">
+                <Shield className="w-3 h-3 text-amber-500" /> Admin Account
+              </Badge>
+            )}
           </div>
-          <h1 className="text-4xl font-black tracking-tight">
-            Profile Settings
-          </h1>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <h1 className="text-3xl sm:text-4xl font-black tracking-tight">
+              {isAdmin ? "Admin Profile" : "Profile Settings"}
+            </h1>
+            {isAdmin && (
+              <Link href="/admin">
+                <Button size="sm" className="gap-1.5 font-bold text-xs h-9 w-fit">
+                  <Shield className="w-3.5 h-3.5" />
+                  <span>Admin Dashboard</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </Button>
+              </Link>
+            )}
+          </div>
           <p className="text-muted-foreground text-sm font-medium">
-            Manage your personal profile credentials and security settings.
+            {isAdmin 
+              ? "Manage your administrator account credentials, mobile contact, and security settings."
+              : "Manage your personal profile credentials and security settings."}
           </p>
         </div>
 
@@ -336,15 +386,17 @@ export default function ProfilePage() {
             <Card className="border-primary/10 shadow-md">
               <CardHeader>
                 <CardTitle className="text-xl flex items-center gap-2">
-                  <UserIcon className="h-5 w-5 text-primary" /> User Account Details
+                  <UserIcon className="h-5 w-5 text-primary" /> {isAdmin ? "Administrator Account Details" : "User Account Details"}
                 </CardTitle>
-                <CardDescription>Manage your Screenplay Pro account profile information.</CardDescription>
+                <CardDescription>
+                  {isAdmin ? "Manage your administrator profile and contact details." : "Manage your Screenplay Pro account profile information."}
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between p-4 bg-secondary/10 rounded-2xl border border-primary/5">
                   <div>
                     <p className="text-xs text-muted-foreground uppercase font-bold">Display Name</p>
-                    <p className="text-sm font-semibold">{user?.displayName || firestoreUser?.displayName || 'User'}</p>
+                    <p className="text-sm font-semibold">{user?.displayName || firestoreUser?.displayName || (isAdmin ? 'Administrator' : 'User')}</p>
                   </div>
                   <Button variant="outline" size="sm" onClick={() => setIsNameDialogOpen(true)}>
                     <Edit3 className="h-4 w-4 mr-1" /> Edit
@@ -376,7 +428,7 @@ export default function ProfilePage() {
                     </div>
                   </div>
                   <Button 
-                    variant="outline" 
+                    variant={mobileNumber ? "outline" : "default"} 
                     size="sm" 
                     onClick={() => {
                       const parsed = findCountryFromPhoneNumber(mobileNumber);
@@ -387,7 +439,7 @@ export default function ProfilePage() {
                       setIsMobileDialogOpen(true);
                     }}
                   >
-                    <Edit3 className="h-4 w-4 mr-1" /> {mobileNumber ? 'Edit' : 'Add'}
+                    <Edit3 className="h-4 w-4 mr-1" /> {mobileNumber ? 'Edit' : '+ Add Number'}
                   </Button>
                 </div>
 
@@ -426,7 +478,11 @@ export default function ProfilePage() {
             <Card className="border-primary/10 shadow-md">
               <CardHeader>
                 <CardTitle className="text-xl">Account Security</CardTitle>
-                <CardDescription>Manage your account password and data deletion preferences.</CardDescription>
+                <CardDescription>
+                  {isAdmin 
+                    ? "Manage your administrator account password and security credentials."
+                    : "Manage your account password and data deletion preferences."}
+                </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-4">
                 <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
@@ -435,7 +491,7 @@ export default function ProfilePage() {
                     Change Password
                   </Button>
 
-                  {!deletionRequest && (
+                  {!isAdmin && !deletionRequest && (
                     <Button 
                       variant="destructive" 
                       className="sm:ml-auto" 
@@ -447,6 +503,13 @@ export default function ProfilePage() {
                       <Trash2 className="mr-2 h-4 w-4" />
                       Delete Account
                     </Button>
+                  )}
+
+                  {isAdmin && (
+                    <div className="sm:ml-auto text-xs text-muted-foreground flex items-center gap-1.5 bg-secondary/40 px-3 py-2 rounded-xl border border-border/40 font-medium">
+                      <Shield className="w-3.5 h-3.5 text-primary shrink-0" />
+                      <span>Root Admin account protected</span>
+                    </div>
                   )}
                 </div>
 

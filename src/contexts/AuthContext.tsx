@@ -114,6 +114,22 @@ export const AuthProvider: React.FC<PropsWithChildren> = ({ children }) => {
       setIsLoading(true);
       if (currentUser) {
         if (currentUser.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
+          const dbUser = await fetchMySQLUser(currentUser.uid);
+          const adminUserData: FirestoreUser = {
+            id: currentUser.uid,
+            uid: currentUser.uid,
+            email: currentUser.email || ADMIN_EMAIL,
+            displayName: currentUser.displayName || dbUser?.displayName || 'Administrator',
+            mobileNumber: dbUser?.mobileNumber || currentUser.phoneNumber || '',
+            photoURL: currentUser.photoURL || dbUser?.photoURL || '',
+            isActive: true,
+            roles: ['admin', 'customer'],
+            createdAt: dbUser?.createdAt || new Date().toISOString()
+          };
+          if (!dbUser) {
+            await saveMySQLUser(adminUserData);
+          }
+          setFirestoreUser((dbUser ? { ...dbUser, ...adminUserData } : adminUserData) as unknown as FirestoreUser);
           setUser(currentUser);
           setIsCompletingProfile(false);
           setPendingUserForProfileCompletion(null);

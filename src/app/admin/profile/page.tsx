@@ -18,10 +18,7 @@ import { auth } from '@/lib/firebase';
 import { uploadLocalImage, deleteLocalImage } from '@/lib/fileUploadUtils';
 import { useToast } from '@/hooks/use-toast';
 import { Progress } from '@/components/ui/progress';
-
-
-
-const ADMIN_EMAIL = "fixbro.in@gmail.com"; 
+import { ADMIN_EMAIL } from '@/lib/constants'; 
 
 const profileSchema = z.object({
   displayName: z.string().min(2, { message: "Name must be at least 2 characters." }).max(50, "Name too long."),
@@ -64,10 +61,16 @@ export default function AdminProfilePage() {
     setImagePreview(adminUser.photoURL || null);
 
     try {
-      const res = await fetch(`/api/db/collections?name=users&id=${adminUser.uid}`);
+      const res = await fetch(`/api/db/users?userId=${adminUser.uid}`);
       const json = await res.json();
-      if (json.success && json.data && json.data.mobileNumber) {
-        form.setValue('mobileNumber', json.data.mobileNumber);
+      if (json.success && json.user && json.user.mobileNumber) {
+        form.setValue('mobileNumber', json.user.mobileNumber);
+      } else {
+        const genericRes = await fetch(`/api/db/collections?name=users&id=${adminUser.uid}`);
+        const genericJson = await genericRes.json();
+        if (genericJson.success && genericJson.data?.mobileNumber) {
+          form.setValue('mobileNumber', genericJson.data.mobileNumber);
+        }
       }
     } catch (error) {
       console.error("Error fetching admin mobile number:", error);
@@ -155,15 +158,21 @@ export default function AdminProfilePage() {
         mobileNumber: data.mobileNumber || null,
         photoURL: newPhotoURL || null, 
         email: user.email, 
+        roles: ['admin', 'user'],
         updatedAt: new Date().toISOString(),
       };
+      await fetch('/api/db/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(fullUserData)
+      });
       await fetch('/api/db/collections', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ collectionName: 'users', id: user.uid, data: fullUserData })
       });
 
-      toast({ title: "Profile Updated", description: "Your admin profile has been successfully updated in MySQL." });
+      toast({ title: "Profile Updated", description: "Your admin profile has been successfully updated." });
     } catch (dbError) {
       console.error("Error updating MySQL user record:", dbError);
       toast({ title: "Update Failed", description: (dbError as Error).message || "Could not save profile details to database.", variant: "destructive" });
