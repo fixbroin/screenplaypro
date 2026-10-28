@@ -3,11 +3,12 @@
 
 import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { getUserScripts, createScript, deleteScript } from "@/lib/scriptUtils";
+import { getUserScripts, getAllScriptsAdmin, createScript, deleteScript, exportToPDF } from "@/lib/scriptUtils";
+import { ADMIN_EMAIL } from "@/lib/constants";
 import { Script } from "@/types/script";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Plus, Edit, Trash2, Download, FileText, Loader2, ArrowLeft, PenTool, Sparkles, BookOpen, Printer, Share2, X, HelpCircle } from "lucide-react";
+import { Plus, Edit, Trash2, Download, FileText, Loader2, ArrowLeft, PenTool, Sparkles, BookOpen, Printer, Share2, X, HelpCircle, Shield, User } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
@@ -22,7 +23,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { exportToPDF } from "@/lib/scriptUtils";
 import { checkSubscriptionStatus } from "@/lib/subscriptionUtils";
 import {
   Accordion,
@@ -33,6 +33,13 @@ import {
 
 export default function ScriptWritingDashboardClient() {
   const { user, firestoreUser, isLoading: authLoading, triggerAuthRedirect } = useAuth();
+  const isAdmin = Boolean(
+    (user?.email && user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase()) ||
+    firestoreUser?.roles?.includes('admin')
+  );
+  const [adminViewMode, setAdminViewMode] = useState<'my' | 'all'>('my');
+  const [allScripts, setAllScripts] = useState<Script[]>([]);
+  const [allScriptsLoading, setAllScriptsLoading] = useState(false);
   const [scripts, setScripts] = useState<Script[]>([]);
   const [loading, setLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
@@ -133,7 +140,11 @@ export default function ScriptWritingDashboardClient() {
     if (!user) return;
     try {
       setLoading(true);
-      const userScripts = await getUserScripts(user.uid);
+      let token: string | undefined;
+      try {
+        token = await user.getIdToken();
+      } catch (e) {}
+      const userScripts = await getUserScripts(user.uid, { uid: user.uid, email: user.email, token });
       setScripts(userScripts);
     } catch (error) {
       console.error("Error loading scripts:", error);
@@ -147,11 +158,44 @@ export default function ScriptWritingDashboardClient() {
     }
   };
 
+  const loadAllScripts = async () => {
+    if (!user || !isAdmin) return;
+    try {
+      setAllScriptsLoading(true);
+      let token: string | undefined;
+      try {
+        token = await user.getIdToken();
+      } catch (e) {}
+      const fetched = await getAllScriptsAdmin({ uid: user.uid, email: user.email, token });
+      setAllScripts(fetched);
+    } catch (err) {
+      console.error("Error loading all scripts for admin:", err);
+      toast({
+        title: "Error",
+        description: "Failed to load all screenplays.",
+        variant: "destructive",
+      });
+    } finally {
+      setAllScriptsLoading(false);
+    }
+  };
+
   const handleCreateScript = async () => {
     if (!user || !newScriptTitle.trim()) return;
     try {
       setIsCreating(true);
-      const scriptId = await createScript(user.uid, user.email || "", newScriptTitle, newScriptWrittenBy, newScriptDesc);
+      let token: string | undefined;
+      try {
+        token = await user.getIdToken();
+      } catch (e) {}
+      const scriptId = await createScript(
+        user.uid, 
+        user.email || "", 
+        newScriptTitle, 
+        newScriptWrittenBy, 
+        newScriptDesc,
+        { uid: user.uid, email: user.email, token }
+      );
       toast({
         title: "Success",
         description: "Script created successfully!",
@@ -172,8 +216,13 @@ export default function ScriptWritingDashboardClient() {
   const handleDeleteScript = async (id: string) => {
     if (!confirm("Are you sure you want to delete this script?")) return;
     try {
-      await deleteScript(id);
-      setScripts(scripts.filter(s => s.id !== id));
+      let token: string | undefined;
+      try {
+        token = await user?.getIdToken();
+      } catch (e) {}
+      await deleteScript(id, { uid: user?.uid, email: user?.email, token });
+      setScripts(prev => prev.filter(s => s.id !== id));
+      setAllScripts(prev => prev.filter(s => s.id !== id));
       toast({
         title: "Deleted",
         description: "Script deleted successfully.",
@@ -325,10 +374,23 @@ export default function ScriptWritingDashboardClient() {
         </Link>
       </div>
       
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
         <div>
-          <h1 className="text-4xl font-bold text-foreground">My Scripts</h1>
-          <p className="text-muted-foreground mt-2">Write and manage your movie scripts with ease.</p>
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl md:text-4xl font-bold text-foreground">
+              {isAdmin && adminViewMode === 'all' ? "All Writers' Screenplays" : "My Scripts"}
+            </h1>
+            {isAdmin && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 text-xs font-semibold">
+                <Shield className="w-3.5 h-3.5" /> Admin View
+              </span>
+            )}
+          </div>
+          <p className="text-muted-foreground mt-2">
+            {isAdmin && adminViewMode === 'all'
+              ? "Administrator mode: You have authorized access to view, edit, and inspect screenplays across all platform writers."
+              : "Write and manage your movie scripts with ease."}
+          </p>
         </div>
         
         <div className="flex items-center gap-2 relative">
@@ -451,12 +513,46 @@ export default function ScriptWritingDashboardClient() {
         </div>
       </div>
 
-      {scripts.length === 0 ? (
+      {isAdmin && (
+        <div className="flex items-center gap-2 mb-8 p-1.5 bg-muted/60 rounded-2xl w-fit border border-border">
+          <Button
+            variant={adminViewMode === 'my' ? 'default' : 'ghost'}
+            size="sm"
+            onClick={() => setAdminViewMode('my')}
+            className={`rounded-xl text-xs font-bold gap-1.5 transition-all ${adminViewMode === 'my' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            My Screenplays ({scripts.length})
+          </Button>
+          <Button
+            variant={adminViewMode === 'all' ? 'default' : 'ghost'}
+            size="sm"
+            onClick={() => {
+              setAdminViewMode('all');
+              if (allScripts.length === 0) {
+                loadAllScripts();
+              }
+            }}
+            className={`rounded-xl text-xs font-bold gap-1.5 transition-all ${adminViewMode === 'all' ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            <Shield className="w-3.5 h-3.5" /> All Writers' Screenplays ({allScripts.length > 0 ? allScripts.length : 'All'})
+          </Button>
+        </div>
+      )}
+
+      {((isAdmin && adminViewMode === 'all') ? allScriptsLoading : loading) ? (
+        <div className="flex h-64 items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      ) : ((isAdmin && adminViewMode === 'all') ? allScripts : scripts).length === 0 ? (
         <Card className="flex flex-col items-center justify-center py-24 bg-muted/20 border-dashed border-border">
           <FileText className="h-16 w-16 text-muted-foreground/50 mb-6" />
-          <h3 className="text-2xl font-semibold text-foreground">No scripts yet</h3>
+          <h3 className="text-2xl font-semibold text-foreground">
+            {isAdmin && adminViewMode === 'all' ? "No screenplays found" : "No scripts yet"}
+          </h3>
           <p className="text-muted-foreground mb-8 text-center max-w-md">
-            Your creative journey starts here. Create your first script and start writing your next big movie!
+            {isAdmin && adminViewMode === 'all'
+              ? "There are currently no screenplays saved in the database."
+              : "Your creative journey starts here. Create your first script and start writing your next big movie!"}
           </p>
           <Dialog>
             <DialogTrigger asChild>
@@ -514,17 +610,30 @@ export default function ScriptWritingDashboardClient() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {scripts.map((script) => (
+          {((isAdmin && adminViewMode === 'all') ? allScripts : scripts).map((script) => (
             <Card key={script.id} className="group hover:border-primary/50 transition-all duration-300 shadow-sm hover:shadow-xl bg-card overflow-hidden">
               <CardHeader className="bg-muted/5 group-hover:bg-primary/5 transition-colors duration-300">
                 <div className="flex justify-between items-start">
                   <div className="flex-1 min-w-0">
-                    <CardTitle className="truncate text-xl text-foreground group-hover:text-primary transition-colors">{script.title}</CardTitle>
+                    <div className="flex items-center gap-2">
+                      <CardTitle className="truncate text-xl text-foreground group-hover:text-primary transition-colors">{script.title}</CardTitle>
+                      {isAdmin && adminViewMode === 'all' && script.ownerId !== user?.uid && (
+                        <span className="shrink-0 px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] font-bold border border-amber-500/20">
+                          Writer Story
+                        </span>
+                      )}
+                    </div>
                     <CardDescription className="truncate text-muted-foreground mt-1">
                       {script.description || "No description provided"}
                     </CardDescription>
+                    {isAdmin && adminViewMode === 'all' && (
+                      <div className="mt-2 text-xs text-muted-foreground flex items-center gap-1.5 font-medium truncate">
+                        <User className="w-3.5 h-3.5 text-primary shrink-0" />
+                        <span className="truncate">Writer: {script.writtenBy || script.ownerEmail || script.ownerId}</span>
+                      </div>
+                    )}
                   </div>
-                  <div className="bg-primary/10 p-3 rounded-xl transition-transform duration-300 group-hover:scale-110">
+                  <div className="bg-primary/10 p-3 rounded-xl transition-transform duration-300 group-hover:scale-110 shrink-0 ml-3">
                     <FileText className="h-6 w-6 text-primary" />
                   </div>
                 </div>

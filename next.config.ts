@@ -40,17 +40,18 @@ const withPWA = withPWAInit({
   register: true,
   skipWaiting: true,
   reloadOnOnline: true,
+  dynamicStartUrl: false,
+  cacheStartUrl: false,
 
   workboxOptions: {
+    importScripts: ['/sw-helper.js'],
     exclude: [
       /googletagmanager\.com/,
       /admin/,
-      /artist/,
       /chunk-[A-Za-z0-9]+\.js/,
       /\.map$/,
     ],
     runtimeCaching: userRuntimeCaching,
-    // The top-level 'plugins' key was incorrect and is removed.
   },
 
   pwas: {
@@ -60,29 +61,13 @@ const withPWA = withPWAInit({
       scope: '/admin',
       reloadOnOnline: true,
       workboxOptions: {
+        importScripts: ['/sw-helper.js'],
         runtimeCaching: [
           {
             urlPattern: /^\/admin.*/i,
             handler: 'NetworkOnly',
           },
         ],
-        // The invalid 'plugins' key is removed from here.
-      },
-    },
-
-    Artist: {
-      dest: 'public/artist',
-      sw: 'sw.js',
-      scope: '/artist',
-      reloadOnOnline: true,
-      workboxOptions: {
-        runtimeCaching: [
-          {
-            urlPattern: /^\/artist.*/i,
-            handler: 'NetworkOnly',
-          },
-        ],
-        // The invalid 'plugins' key is removed from here.
       },
     },
   },

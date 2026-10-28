@@ -43,7 +43,20 @@ export const SOURCE_LANGUAGES = [
 // Alias for backwards compatibility
 export const INDIAN_LANGUAGES = SUPPORTED_LANGUAGES;
 
-export const createScript = async (userId: string, userEmail: string, title: string, writtenBy: string = "", description: string = ""): Promise<string> => {
+export interface ScriptUserOptions {
+  uid?: string;
+  email?: string | null;
+  token?: string;
+}
+
+export const createScript = async (
+  userId: string, 
+  userEmail: string, 
+  title: string, 
+  writtenBy: string = "", 
+  description: string = "",
+  userOptions?: ScriptUserOptions | null
+): Promise<string> => {
   const scriptId = nanoid(20);
   const initialContent: ScriptElement[] = [
     { id: nanoid(), type: 'scene-heading', text: 'EXT. LOCATION - DAY' },
@@ -69,9 +82,14 @@ export const createScript = async (userId: string, userEmail: string, title: str
   };
 
   try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (userOptions?.token) headers['Authorization'] = `Bearer ${userOptions.token}`;
+    if (userOptions?.uid || userId) headers['x-user-id'] = userOptions?.uid || userId;
+    if (userOptions?.email || userEmail) headers['x-user-email'] = userOptions?.email || userEmail;
+
     await fetch('/api/db/scripts', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(scriptData)
     });
   } catch (err) {
@@ -81,14 +99,23 @@ export const createScript = async (userId: string, userEmail: string, title: str
   return scriptId;
 };
 
-export const updateScript = async (scriptId: string, data: Partial<Script>) => {
+export const updateScript = async (
+  scriptId: string, 
+  data: Partial<Script>,
+  userOptions?: ScriptUserOptions | null
+) => {
   try {
-    const existing = await getScript(scriptId);
+    const existing = await getScript(scriptId, userOptions);
     if (existing) {
       const updatedScript = { ...existing, ...data, id: scriptId };
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (userOptions?.token) headers['Authorization'] = `Bearer ${userOptions.token}`;
+      if (userOptions?.uid) headers['x-user-id'] = userOptions.uid;
+      if (userOptions?.email) headers['x-user-email'] = userOptions.email;
+
       await fetch('/api/db/scripts', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(updatedScript)
       });
     }
@@ -97,17 +124,41 @@ export const updateScript = async (scriptId: string, data: Partial<Script>) => {
   }
 };
 
-export const deleteScript = async (scriptId: string) => {
+export const deleteScript = async (
+  scriptId: string,
+  userOptions?: ScriptUserOptions | null
+) => {
   try {
-    await fetch(`/api/db/scripts?scriptId=${scriptId}`, { method: 'DELETE' });
+    const headers: Record<string, string> = {};
+    if (userOptions?.token) headers['Authorization'] = `Bearer ${userOptions.token}`;
+    if (userOptions?.uid) headers['x-user-id'] = userOptions.uid;
+    if (userOptions?.email) headers['x-user-email'] = userOptions.email;
+
+    const queryParams = new URLSearchParams({ scriptId });
+    if (userOptions?.uid) queryParams.set('requesterId', userOptions.uid);
+    if (userOptions?.email) queryParams.set('requesterEmail', userOptions.email);
+
+    await fetch(`/api/db/scripts?${queryParams.toString()}`, { method: 'DELETE', headers });
   } catch (err) {
     console.error("Error deleting script from MySQL:", err);
   }
 };
 
-export const getScript = async (scriptId: string): Promise<Script | null> => {
+export const getScript = async (
+  scriptId: string,
+  userOptions?: ScriptUserOptions | null
+): Promise<Script | null> => {
   try {
-    const res = await fetch(`/api/db/scripts?scriptId=${scriptId}`);
+    const headers: Record<string, string> = {};
+    if (userOptions?.token) headers['Authorization'] = `Bearer ${userOptions.token}`;
+    if (userOptions?.uid) headers['x-user-id'] = userOptions.uid;
+    if (userOptions?.email) headers['x-user-email'] = userOptions.email;
+
+    const queryParams = new URLSearchParams({ scriptId });
+    if (userOptions?.uid) queryParams.set('requesterId', userOptions.uid);
+    if (userOptions?.email) queryParams.set('requesterEmail', userOptions.email);
+
+    const res = await fetch(`/api/db/scripts?${queryParams.toString()}`, { headers });
     if (res.ok) {
       const data = await res.json();
       if (data.success && data.script) {
@@ -120,9 +171,21 @@ export const getScript = async (scriptId: string): Promise<Script | null> => {
   return null;
 };
 
-export const getUserScripts = async (userId: string): Promise<Script[]> => {
+export const getUserScripts = async (
+  userId: string,
+  userOptions?: ScriptUserOptions | null
+): Promise<Script[]> => {
   try {
-    const res = await fetch(`/api/db/scripts?userId=${userId}`);
+    const headers: Record<string, string> = {};
+    if (userOptions?.token) headers['Authorization'] = `Bearer ${userOptions.token}`;
+    if (userOptions?.uid || userId) headers['x-user-id'] = userOptions?.uid || userId;
+    if (userOptions?.email) headers['x-user-email'] = userOptions.email;
+
+    const queryParams = new URLSearchParams({ userId });
+    if (userOptions?.uid || userId) queryParams.set('requesterId', userOptions?.uid || userId);
+    if (userOptions?.email) queryParams.set('requesterEmail', userOptions.email);
+
+    const res = await fetch(`/api/db/scripts?${queryParams.toString()}`, { headers });
     if (res.ok) {
       const data = await res.json();
       if (data.success && Array.isArray(data.scripts)) {
@@ -131,6 +194,32 @@ export const getUserScripts = async (userId: string): Promise<Script[]> => {
     }
   } catch (err) {
     console.error("Error fetching user scripts from MySQL:", err);
+  }
+  return [];
+};
+
+export const getAllScriptsAdmin = async (
+  userOptions?: ScriptUserOptions | null
+): Promise<Script[]> => {
+  try {
+    const headers: Record<string, string> = {};
+    if (userOptions?.token) headers['Authorization'] = `Bearer ${userOptions.token}`;
+    if (userOptions?.uid) headers['x-user-id'] = userOptions.uid;
+    if (userOptions?.email) headers['x-user-email'] = userOptions.email;
+
+    const queryParams = new URLSearchParams({ all: 'true' });
+    if (userOptions?.uid) queryParams.set('requesterId', userOptions.uid);
+    if (userOptions?.email) queryParams.set('requesterEmail', userOptions.email);
+
+    const res = await fetch(`/api/db/scripts?${queryParams.toString()}`, { headers });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && Array.isArray(data.scripts)) {
+        return data.scripts as Script[];
+      }
+    }
+  } catch (err) {
+    console.error("Error fetching all scripts for admin from MySQL:", err);
   }
   return [];
 };
@@ -150,10 +239,14 @@ export const getScriptByShareId = async (shareId: string): Promise<Script | null
   return null;
 };
 
-export const subscribeToScript = (scriptId: string, callback: (script: Script | null) => void) => {
+export const subscribeToScript = (
+  scriptId: string, 
+  callback: (script: Script | null) => void,
+  userOptions?: ScriptUserOptions | null
+) => {
   let isMounted = true;
   const poll = async () => {
-    const script = await getScript(scriptId);
+    const script = await getScript(scriptId, userOptions);
     if (isMounted) callback(script);
   };
   poll();

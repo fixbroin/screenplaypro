@@ -30,6 +30,7 @@ const navItems = [
   { href: '/admin/subscriptions', label: 'Subscriptions', icon: CreditCard },
   { href: '/admin/delete-requests', label: 'Delete Requests', icon: Trash2 },
   { href: '/admin/users', label: 'Users', icon: Users },
+  { href: '/admin/scripts', label: 'Screenplays', icon: FileText },
   { href: '/admin/inquiries', label: 'Inquiries', icon: Mail },
   { href: '/admin/chat', label: 'Chat Management', icon: ChatIcon },
 

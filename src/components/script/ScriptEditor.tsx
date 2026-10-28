@@ -16,6 +16,7 @@ import {
   SOURCE_LANGUAGES
 } from "@/lib/scriptUtils";
 import { checkSubscriptionStatus } from "@/lib/subscriptionUtils";
+import { ADMIN_EMAIL } from "@/lib/constants";
 import { Script, ScriptElement, ScriptElementType, ScriptSettings } from "@/types/script";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -40,7 +41,11 @@ import {
   Sparkles,
   Copy,
   ArrowRightLeft,
-  HelpCircle
+  HelpCircle,
+  Shield,
+  Lock,
+  ShieldAlert,
+  LogIn
 } from "lucide-react";
 import { GuidedTourOverlay, GuidedTourStep } from "./GuidedTourOverlay";
 import Link from "next/link";
@@ -123,13 +128,15 @@ const HIGHLIGHTS = [
   { name: 'Purple', value: '#e9d5ff' },
 ];
 
-export function ScriptEditor({ id: propId }: { id?: string }) {
+export function ScriptEditor({ id: propId, isSharedView }: { id?: string; isSharedView?: boolean }) {
   const params = useParams();
   const id = (propId || params?.id) as string;
   const router = useRouter();
   const { user, firestoreUser, isLoading: authLoading, triggerAuthRedirect } = useAuth();
   const [script, setScript] = useState<Script | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isAccessDenied, setIsAccessDenied] = useState(false);
+  const [accessDeniedReason, setAccessDeniedReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
@@ -380,7 +387,7 @@ export function ScriptEditor({ id: propId }: { id?: string }) {
     try {
       const sourceLangObj = SOURCE_LANGUAGES.find(l => l.code === selectedSourceLang);
       const targetLangObj = SUPPORTED_LANGUAGES.find(l => l.code === selectedTargetLang);
-      const sourceName = sourceLangObj ? sourceLangObj.name.replace(/^[✨\s]+/, '') : selectedSourceLang;
+      const sourceName = sourceLangObj ? sourceLangObj.name.replace(/^[âœ¨\s]+/, '') : selectedSourceLang;
       const targetName = targetLangObj ? targetLangObj.name : selectedTargetLang;
 
       toast({
@@ -477,29 +484,93 @@ export function ScriptEditor({ id: propId }: { id?: string }) {
   }, [loading, script?.id, script?.content.length, recalculateHeights]);
 
   useEffect(() => {
-    if (id) {
-      let isSubscribed = true;
-      getScript(id).then(fetchedScript => {
-        if (isSubscribed && fetchedScript) {
-          setScript(fetchedScript);
-          setLoading(false);
-        } else if (isSubscribed) {
-          const unsubscribe = subscribeToScript(id, (updatedScript) => {
-            if (isSubscribed) {
-              setScript(updatedScript);
-              setLoading(false);
-            }
-          });
-          return () => unsubscribe();
-        }
-      }).catch(err => {
-        console.error("Error loading script from MySQL:", err);
-        setLoading(false);
-      });
+    if (!id) return;
+    if (authLoading) return; // Wait for Firebase Auth resolution
 
-      return () => { isSubscribed = false; };
-    }
-  }, [id]);
+    let isSubscribed = true;
+    setLoading(true);
+
+    const loadScriptData = async () => {
+      try {
+        let token: string | undefined;
+        if (user) {
+          try {
+            token = await user.getIdToken();
+          } catch (e) {
+            console.warn("Failed to get Firebase ID token:", e);
+          }
+        }
+
+        const userOptions = {
+          uid: user?.uid,
+          email: user?.email,
+          token
+        };
+
+        const fetchedScript = await getScript(id, userOptions);
+
+        if (!isSubscribed) return;
+
+        if (!fetchedScript) {
+          if (!user && !isSharedView) {
+            setIsAccessDenied(true);
+            setAccessDeniedReason("This screenplay is private. You must sign in to view it.");
+          }
+          setScript(null);
+          setLoading(false);
+          return;
+        }
+
+        // Check Access Rights
+        const isAdminUser = Boolean(
+          (user?.email && user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase()) ||
+          firestoreUser?.roles?.includes('admin')
+        );
+        const isOwnerUser = Boolean(
+          user && (
+            (fetchedScript.ownerId && user.uid === fetchedScript.ownerId) ||
+            (fetchedScript.ownerEmail && user.email?.toLowerCase() === fetchedScript.ownerEmail.toLowerCase())
+          )
+        );
+        const isCollaboratorUser = Boolean(
+          user && fetchedScript.collaborators?.some(c => 
+            c.userId === user.uid || 
+            (c.email && user.email && c.email.toLowerCase() === user.email.toLowerCase())
+          )
+        );
+        const isPublicAllowed = Boolean(isSharedView && fetchedScript.isPublic);
+
+        if (!isAdminUser && !isOwnerUser && !isCollaboratorUser && !isPublicAllowed) {
+          setIsAccessDenied(true);
+          setAccessDeniedReason("This screenplay is strictly private and only accessible by its author.");
+          setScript(null);
+          setLoading(false);
+          return;
+        }
+
+        setIsAccessDenied(false);
+        setScript(fetchedScript);
+        setLoading(false);
+
+        const unsubscribe = subscribeToScript(id, (updatedScript) => {
+          if (isSubscribed && updatedScript) {
+            setScript(updatedScript);
+          }
+        }, userOptions);
+
+        return () => unsubscribe();
+      } catch (err) {
+        console.error("Error loading script:", err);
+        if (isSubscribed) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadScriptData();
+
+    return () => { isSubscribed = false; };
+  }, [id, authLoading, user?.uid, user?.email, isSharedView, firestoreUser]);
 
   const handleExportPDF = async () => {
     if (!script) return;
@@ -565,14 +636,14 @@ export function ScriptEditor({ id: propId }: { id?: string }) {
       try {
         const updateData: any = { content: updatedContent };
         if (updatedSettings) updateData.settings = updatedSettings;
-        await updateScript(id, updateData);
+        await updateScript(id, updateData, { uid: user?.uid, email: user?.email });
         setSaving(false);
       } catch (error) {
         console.error("Auto-save error:", error);
         setSaving(false);
       }
     }, 2000);
-  }, [id]);
+  }, [id, user?.uid, user?.email]);
 
   const scrollToElement = useCallback((elementId: string, smooth: boolean = true) => {
     if (typeof window === 'undefined') return;
@@ -604,8 +675,9 @@ export function ScriptEditor({ id: propId }: { id?: string }) {
 
   const handleElementChange = (elementId: string, updates: Partial<ScriptElement>) => {
     if (!script) return;
-    const isOwner = user?.uid === script.ownerId;
-    const canEdit = isOwner || (script.isPublic && script.publicPermission === 'edit') || script.collaborators.some(c => c.userId === user?.uid && c.permission === 'edit');
+    const isOwner = Boolean(user && ((script.ownerId && user.uid === script.ownerId) || (script.ownerEmail && user.email?.toLowerCase() === script.ownerEmail.toLowerCase())));
+    const isAdminUser = Boolean((user?.email && user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase()) || firestoreUser?.roles?.includes('admin'));
+    const canEdit = isAdminUser || isOwner || (isSharedView && script.isPublic && script.publicPermission === 'edit') || script.collaborators.some(c => (c.userId === user?.uid || (c.email && user?.email && c.email.toLowerCase() === user.email.toLowerCase())) && c.permission === 'edit');
     
     if (!canEdit) return;
 
@@ -719,25 +791,129 @@ export function ScriptEditor({ id: propId }: { id?: string }) {
 
   if (loading || authLoading) {
     return (
-      <div className="flex h-[70vh] items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div className="flex flex-col h-screen items-center justify-center bg-background text-foreground space-y-4">
+        <Loader2 className="h-10 w-10 animate-spin text-primary" />
+        <p className="text-sm font-medium text-muted-foreground animate-pulse">
+          Loading screenplay & verifying access...
+        </p>
+      </div>
+    );
+  }
+
+  const isAdmin = Boolean(
+    (user?.email && user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase()) ||
+    firestoreUser?.roles?.includes('admin')
+  );
+  const isOwner = Boolean(
+    user && (
+      (script?.ownerId && user.uid === script.ownerId) ||
+      (script?.ownerEmail && user.email?.toLowerCase() === script.ownerEmail.toLowerCase())
+    )
+  );
+  const isCollaborator = Boolean(
+    user && script?.collaborators?.some(c => 
+      c.userId === user.uid || 
+      (c.email && user.email && c.email.toLowerCase() === user.email.toLowerCase())
+    )
+  );
+  const isPublicShared = Boolean(isSharedView && script?.isPublic);
+  const hasAccess = isAdmin || isOwner || isCollaborator || isPublicShared;
+
+  // Access Denied or Unauthenticated
+  if (isAccessDenied || !hasAccess) {
+    if (!user) {
+      return (
+        <div className="min-h-screen bg-background flex items-center justify-center px-4 py-12">
+          <div className="max-w-md w-full bg-card border border-border rounded-2xl p-8 text-center shadow-2xl space-y-6">
+            <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mx-auto text-amber-500 shadow-sm">
+              <Lock className="w-8 h-8" />
+            </div>
+            <div className="space-y-2">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs font-semibold">
+                Private & Confidential
+              </div>
+              <h2 className="text-2xl font-bold text-foreground tracking-tight">Private Screenplay</h2>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                This screenplay is private and confidential. You must sign in with your author account to view or edit this story.
+              </p>
+            </div>
+            <div className="space-y-3 pt-2">
+              <Button 
+                onClick={() => triggerAuthRedirect(window.location.pathname)}
+                className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-semibold gap-2 py-6 text-base rounded-xl shadow-md"
+              >
+                <LogIn className="w-4 h-4" /> Sign In to View Screenplay
+              </Button>
+              <div className="flex gap-2">
+                <Link href="/script-writing" className="flex-1">
+                  <Button variant="outline" className="w-full border-border text-foreground hover:bg-muted text-xs">
+                    Dashboard
+                  </Button>
+                </Link>
+                <Link href="/" className="flex-1">
+                  <Button variant="outline" className="w-full border-border text-foreground hover:bg-muted text-xs">
+                    Home
+                  </Button>
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center px-4 py-12">
+        <div className="max-w-md w-full bg-card border border-destructive/20 rounded-2xl p-8 text-center shadow-2xl space-y-6">
+          <div className="w-16 h-16 rounded-2xl bg-destructive/10 border border-destructive/20 flex items-center justify-center mx-auto text-destructive shadow-sm">
+            <ShieldAlert className="w-8 h-8" />
+          </div>
+          <div className="space-y-2">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-destructive/10 text-destructive text-xs font-semibold">
+              Access Restricted
+            </div>
+            <h2 className="text-2xl font-bold text-foreground tracking-tight">Access Denied</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              You do not have permission to view or edit this screenplay. This story belongs to another writer and is strictly private.
+            </p>
+            <p className="text-xs text-muted-foreground/80 pt-1">
+              Only the author can access this screenplay.
+            </p>
+          </div>
+          <div className="px-3.5 py-2.5 rounded-lg bg-muted text-xs text-muted-foreground flex items-center justify-between border">
+            <span className="font-medium text-foreground">Signed in as:</span>
+            <span className="truncate max-w-[200px] font-mono">{user.email || user.displayName || user.uid}</span>
+          </div>
+          <div className="space-y-3 pt-2">
+            <Link href="/script-writing" className="block w-full">
+              <Button className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-semibold gap-2 py-6 text-base rounded-xl shadow-md">
+                Go to My Screenplays
+              </Button>
+            </Link>
+            <Link href="/" className="block w-full">
+              <Button variant="outline" className="w-full border-border text-foreground hover:bg-muted text-xs">
+                Back to Homepage
+              </Button>
+            </Link>
+          </div>
+        </div>
       </div>
     );
   }
 
   if (!script) {
     return (
-      <div className="container mx-auto py-20 text-center bg-background">
-        <h2 className="text-2xl font-bold text-foreground">Script not found</h2>
-        <Link href="/script-writing" className="mt-4 inline-block">
+      <div className="container mx-auto py-20 text-center bg-background min-h-screen flex flex-col items-center justify-center">
+        <h2 className="text-2xl font-bold text-foreground">Screenplay Not Found</h2>
+        <p className="text-muted-foreground mt-2">The screenplay you are looking for does not exist or may have been deleted.</p>
+        <Link href="/script-writing" className="mt-6 inline-block">
           <Button variant="outline">Back to Dashboard</Button>
         </Link>
       </div>
     );
   }
 
-  const isOwner = user?.uid === script.ownerId;
-  const canEdit = isOwner || (script.isPublic && script.publicPermission === 'edit') || script.collaborators.some(c => c.userId === user?.uid && c.permission === 'edit');
+  const canEdit = isAdmin || isOwner || (isPublicShared && script.publicPermission === 'edit') || Boolean(script.collaborators?.some(c => (c.userId === user?.uid || (c.email && user?.email && c.email.toLowerCase() === user.email.toLowerCase())) && c.permission === 'edit'));
 
   const getElementStyles = (element: ScriptElement) => {
     let baseStyles = "w-full resize-none overflow-hidden bg-transparent focus:outline-none p-1 transition-all duration-200 ";
@@ -780,7 +956,7 @@ export function ScriptEditor({ id: propId }: { id?: string }) {
               <h1 className="font-bold text-[11px] sm:text-sm md:text-base truncate text-foreground leading-tight">
                 {script.title}
               </h1>
-              <div className="text-[9px] sm:text-[10px] text-muted-foreground flex items-center gap-0.5 sm:gap-1 mt-0.5 font-medium">
+              <div className="text-[9px] sm:text-[10px] text-muted-foreground flex items-center gap-1 sm:gap-1.5 mt-0.5 font-medium">
                 {saving ? (
                   <>
                     <Loader2 className="h-2 w-2 sm:h-2.5 sm:w-2.5 animate-spin shrink-0" /> 
@@ -791,6 +967,11 @@ export function ScriptEditor({ id: propId }: { id?: string }) {
                     <Save className="h-2 w-2 sm:h-2.5 sm:w-2.5 shrink-0" /> 
                     <span className="truncate">Saved</span>
                   </>
+                )}
+                {isAdmin && !isOwner && (
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-[9px] font-bold shrink-0">
+                    <Shield className="w-2.5 h-2.5" /> Admin View
+                  </span>
                 )}
               </div>
             </div>
@@ -1538,15 +1719,15 @@ export function ScriptEditor({ id: propId }: { id?: string }) {
               </span>
               <div className="flex flex-wrap gap-1.5">
                 {[
-                  { label: 'English → Telugu', src: 'en', tgt: 'te' },
-                  { label: 'Telugu → English', src: 'te', tgt: 'en' },
-                  { label: 'Hindi → Telugu', src: 'hi', tgt: 'te' },
-                  { label: 'Telugu → Hindi', src: 'te', tgt: 'hi' },
-                  { label: 'Kannada → Hindi', src: 'kn', tgt: 'hi' },
-                  { label: 'Telugu → Kannada', src: 'te', tgt: 'kn' },
-                  { label: 'Hindi → Marathi', src: 'hi', tgt: 'mr' },
-                  { label: 'Marathi → Hindi', src: 'mr', tgt: 'hi' },
-                  { label: 'English → Marathi', src: 'en', tgt: 'mr' },
+                  { label: 'English â†’ Telugu', src: 'en', tgt: 'te' },
+                  { label: 'Telugu â†’ English', src: 'te', tgt: 'en' },
+                  { label: 'Hindi â†’ Telugu', src: 'hi', tgt: 'te' },
+                  { label: 'Telugu â†’ Hindi', src: 'te', tgt: 'hi' },
+                  { label: 'Kannada â†’ Hindi', src: 'kn', tgt: 'hi' },
+                  { label: 'Telugu â†’ Kannada', src: 'te', tgt: 'kn' },
+                  { label: 'Hindi â†’ Marathi', src: 'hi', tgt: 'mr' },
+                  { label: 'Marathi â†’ Hindi', src: 'mr', tgt: 'hi' },
+                  { label: 'English â†’ Marathi', src: 'en', tgt: 'mr' },
                 ].map((pair, idx) => (
                   <button
                     key={idx}
